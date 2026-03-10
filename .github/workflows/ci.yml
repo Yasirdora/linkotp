@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.6 is the floor for running the TypeScript sources directly.
+        node: ["22.6", "22", "24"]
+        os: [ubuntu-latest]
+        include:
+          - node: "24"
+            os: macos-latest
+          - node: "24"
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify the published artifact
+        run: node --test "test/package.test.ts"
+
+  dependencies:
+    name: No runtime dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+
+      # The headline guarantee, enforced rather than asserted in a README.
+      - name: Assert the dependency tree is empty
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const runtime = { ...pkg.dependencies, ...pkg.peerDependencies };
+            if (Object.keys(runtime).length > 0) {
+              console.error('Runtime dependencies found:', runtime);
+              process.exit(1);
+            }
+            const dev = Object.keys(pkg.devDependencies ?? {});
+            if (dev.length !== 1 || dev[0] !== 'typescript') {
+              console.error('Unexpected devDependencies:', dev);
+              process.exit(1);
+            }
+            console.log('Zero runtime dependencies, one devDependency: typescript');
+          "
+
+      - name: Audit
+        run: npm audit --audit-level=low
+
+  package:
+    name: Package contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Inspect the tarball
+        run: npm pack --dry-run
+
+      # A stray .env, source map of a secret, or test fixture in the published
+      # tarball is a supply-chain problem, so the file list is checked.
+      - name: Assert nothing unexpected ships
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const [{ files }] = require('./pack.json');
+            const allowed = /^(dist\/|README\.md$|LICENSE$|CHANGELOG\.md$|package\.json$)/;
+            const bad = files.map((f) => f.path).filter((p) => !allowed.test(p));
+            if (bad.length) { console.error('Unexpected files:', bad); process.exit(1); }
+            console.log('Tarball contains only dist/ and metadata:', files.length, 'files');
+          "

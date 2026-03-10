@@ -1,0 +1,83 @@
+{
+  "name": "otplink",
+  "version": "0.1.0",
+  "description": "One email, two ways in. A dependency-free, framework-agnostic passwordless auth primitive that sends a typed code and a scanner-safe magic link in a single message.",
+  "keywords": [
+    "auth",
+    "authentication",
+    "passwordless",
+    "magic-link",
+    "otp",
+    "one-time-password",
+    "email",
+    "edge",
+    "zero-dependency",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "Ysr",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yasirdora/otplink.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Yasirdora/otplink/issues"
+  },
+  "homepage": "https://github.com/Yasirdora/otplink#readme",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "import": "./dist/stores/index.js",
+      "require": "./dist/cjs/stores/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js",
+      "require": "./dist/cjs/http/index.js"
+    },
+    "./package.json": "./package.json",
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "require": "./dist/cjs/testing/index.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && node scripts/postbuild.mjs",
+    "build:esm": "tsc -p tsconfig.build.json",
+    "build:cjs": "tsc -p tsconfig.build.cjs.json",
+    "clean": "node scripts/clean.mjs",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:watch": "node --test --watch \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run test",
+    "prepublishOnly": "npm run clean && npm run verify && npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

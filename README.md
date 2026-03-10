@@ -1,0 +1,358 @@
+# otplink
+
+**One email, two ways in.** A passwordless auth primitive that issues a typed code *and* a scanner-safe magic link as a single challenge, delivered in one message.
+
+- **Zero runtime dependencies.** Web Standard APIs only.
+- **Runs anywhere.** Node, Bun, Deno, Cloudflare Workers, Vercel Edge.
+- **No framework opinion.** Next.js, SvelteKit, Remix, Astro, Hono, Express, or your own routes.
+- **No database opinion.** Postgres, SQLite, D1, Turso, MySQL, or six methods of your own.
+- **Does not mint sessions.** It proves an address; your session library does the rest.
+
+```bash
+npm install otplink
+```
+
+---
+
+## Why this exists
+
+Sending a code and a link in one email is a well-worn pattern — Slack, Notion, Linear, and Vercel all do it. Implementing it on top of an existing OTP plugin is where it goes wrong, in two specific ways.
+
+### 1. The link must not carry the code
+
+The tempting shortcut is to put the OTP in the URL:
+
+```
+https://example.com/auth/verify?code=418207&email=you@example.com   ❌
+```
+
+Now the link is only as strong as the code. Six digits is about **20 bits** — perfectly safe for a value typed into a rate-limited form, and far too weak for a bearer credential that lands in browser history, server access logs, CDN logs, and `Referer` headers. Those are two different threat models, and one secret cannot serve both.
+
+otplink issues **two independent secrets** bound to one challenge:
+
+| | Entropy | Where it travels |
+|---|---:|---|
+| Code — 6 chars over a 32-char alphabet | **~30 bits** | Typed into a form |
+| Token — 48 chars over a 62-char alphabet | **~286 bits** | Carried in a URL |
+
+Redeeming either one retires the other. Both are stored as HMAC digests keyed by a secret that lives outside the database.
+
+### 2. A magic link must not be consumed by `GET`
+
+Microsoft Defender Safe Links, Proofpoint, Mimecast, and Barracuda fetch every URL in inbound mail before the recipient sees it. Consumer clients add link previews; browsers prefetch.
+
+If `GET` consumes the token, each of those fetches burns a single-use credential. The user clicks a link that was valid seconds ago and is told it expired. Worse, the scanner's request *succeeds* — the server mints a real session and hands it to a security appliance, which throws it away.
+
+This is also plain HTTP: [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-safe-methods) requires `GET` to be safe, and spending a one-time credential is not.
+
+otplink's `GET` renders a confirmation page and touches nothing. Only the `POST` that page submits consumes the token. Automated fetchers issue `GET` and stop.
+
+---
+
+## Quick start
+
+```ts
+import { createOtpLink } from "otplink";
+import { createSqlStore, schemaFor } from "otplink/stores";
+
+const auth = createOtpLink({
+  secret: process.env.OTPLINK_SECRET!,   // 32+ chars, from the environment
+  baseUrl: "https://example.com",
+  store: createSqlStore({ driver, dialect: "postgres" }),
+  mailer: async (message) => {
+    await resend.emails.send({
+      from: "Example <auth@example.com>",
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+      headers: message.headers,
+    });
+  },
+});
+```
+
+Create the table once with `schemaFor("postgres")`, then:
+
+```ts
+await auth.start({ email: "person@example.com" });
+
+// The user types the code…
+const identity = await auth.verifyCode({ email, code });
+
+// …or clicks the link.
+const identity = await auth.verifyToken({ token });
+
+identity; // { email, purpose, metadata, via: "code" | "link", verifiedAt, challengeId }
+```
+
+Generate a secret:
+
+```bash
+node -e "console.log(crypto.randomBytes(32).toString('base64url'))"
+```
+
+---
+
+## The HTTP layer
+
+`createHandler` returns one `(Request) => Promise<Response>` built on the Fetch API, with the `GET`/`POST` split, the CSP nonce, and the security headers already correct.
+
+```ts
+import { createHandler } from "otplink/http";
+
+export const handler = createHandler(auth, {
+  async onVerified(identity, request) {
+    // otplink does not create sessions. This is where you do.
+    const cookie = await mySessionLibrary.create(identity.email);
+    return { headers: { "Set-Cookie": cookie }, redirectTo: "/dashboard" };
+  },
+});
+```
+
+It serves four routes:
+
+| Route | Method | What it does |
+|---|---|---|
+| `/api/auth/start` | `POST` | Issues and sends a challenge |
+| `/api/auth/verify` | `POST` | Redeems a typed code |
+| `/auth/verify` | `GET` | Renders the confirmation page — **consumes nothing** |
+| `/auth/verify` | `POST` | Redeems the link token |
+
+Both paths are configurable (`basePath`, and `verifyPath` on the instance).
+
+### Framework recipes
+
+<details open>
+<summary><b>Next.js</b> (App Router)</summary>
+
+```ts
+// app/api/auth/[...route]/route.ts
+export const POST = handler;
+
+// app/auth/verify/route.ts
+export const GET = handler;
+export const POST = handler;
+```
+</details>
+
+<details>
+<summary><b>SvelteKit</b></summary>
+
+```ts
+// src/routes/[...route]/+server.ts
+export const GET = ({ request }) => handler(request);
+export const POST = ({ request }) => handler(request);
+```
+</details>
+
+<details>
+<summary><b>Hono, Elysia, Nitro</b></summary>
+
+```ts
+app.all("/api/auth/*", (c) => handler(c.req.raw));
+app.all("/auth/verify", (c) => handler(c.req.raw));
+```
+</details>
+
+<details>
+<summary><b>Cloudflare Workers, Deno, Bun</b></summary>
+
+```ts
+export default { fetch: handler };            // Workers
+Deno.serve(handler);                          // Deno
+Bun.serve({ fetch: handler });                // Bun
+```
+</details>
+
+<details>
+<summary><b>Astro</b></summary>
+
+```ts
+// src/pages/api/auth/[...route].ts
+export const ALL = ({ request }) => handler(request);
+```
+</details>
+
+<details>
+<summary><b>Express</b> (needs a small shim)</summary>
+
+Express predates the Fetch API, so convert at the boundary:
+
+```ts
+import { Readable } from "node:stream";
+
+app.use(async (req, res, next) => {
+  const url = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  const request = new Request(url, {
+    method: req.method,
+    headers: req.headers as Record<string, string>,
+    body: ["GET", "HEAD"].includes(req.method) ? undefined : req,
+    duplex: "half",
+  });
+
+  const response = await handler(request);
+  if (response.status === 404) return next();
+
+  res.status(response.status);
+  for (const [k, v] of response.headers) res.append(k, v);
+  if (response.body) Readable.fromWeb(response.body).pipe(res);
+  else res.end();
+});
+```
+</details>
+
+Or skip the handler entirely and call `start` / `verifyCode` / `verifyToken` from your own routes. The core has no HTTP dependency.
+
+---
+
+## Stores
+
+```ts
+import { createMemoryStore, createSqlStore, schemaFor } from "otplink/stores";
+```
+
+`createSqlStore` needs a two-method driver, so any client works:
+
+```ts
+// Cloudflare D1
+const driver = {
+  all: (sql, params) => env.DB.prepare(sql).bind(...params).all().then((r) => r.results),
+  run: (sql, params) =>
+    env.DB.prepare(sql).bind(...params).run().then((r) => ({ rowsAffected: r.meta.changes })),
+};
+
+// node:postgres, postgres.js, better-sqlite3, libSQL — same shape.
+```
+
+Dialects: `sqlite` (default), `postgres`, `mysql`. SQLite and Postgres use `RETURNING`; MySQL takes an equivalent two-statement path that is still atomic.
+
+### Writing your own
+
+The interface is six methods, and one of them carries the entire security model. `consume` **must be a single guarded compare-and-set**:
+
+```sql
+UPDATE otplink_challenge
+   SET consumed_at = :now
+ WHERE token_hash  = :tokenHash
+   AND consumed_at IS NULL
+   AND expires_at  > :now
+   AND attempts    < max_attempts
+RETURNING *
+```
+
+A read-then-write implementation has a window in which two callers both see the row as unconsumed, and a single-use token authenticates twice. The compiler cannot catch that, so there is a suite that can:
+
+```ts
+import { checkStoreConformance } from "otplink/testing";
+
+const report = await checkStoreConformance({ createStore: () => myStore() });
+assert.ok(report.passed, report.summary);
+```
+
+Seventeen checks, including firing 24 concurrent `consume` calls at one challenge and asserting exactly one wins. Run it in your own CI.
+
+---
+
+## Security model
+
+| Property | How |
+|---|---|
+| Secrets at rest | HMAC-SHA256 keyed by an application secret, domain-separated per use. A database leak alone reveals nothing. |
+| Code binding | The code digest includes the address, so a captured digest cannot be replayed against another account. |
+| Single use | Enforced by a guarded atomic `UPDATE`, not by application logic. |
+| Brute force | Configurable attempt ceiling; the guard re-checks it on every claim. |
+| Randomness | `crypto.getRandomValues` with rejection sampling. Naive `byte % 62` skews the first eight characters by ~25%. |
+| Enumeration | `shouldSend` suppresses delivery while returning an identical result, padded to a latency floor. |
+| Open redirect | Every redirect is restricted to a same-origin path. |
+| Login CSRF | State-changing `POST`s are checked against `Sec-Fetch-Site` / `Origin`. |
+| Token leakage | `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex`, and the token is stripped from the address bar on load. |
+| XSS on the confirmation page | `default-src 'none'` with a fresh per-response nonce. |
+| Config errors | Weak secrets, non-https origins, and under-entropy tokens are rejected at startup, not at 3am. |
+
+Two things it deliberately does **not** do: create sessions, and rate-limit across instances. Both are yours, with hooks provided (`onVerified`, `RateLimiter`).
+
+See [SECURITY.md](./SECURITY.md) for the full threat model and the residual risks.
+
+---
+
+## Configuration
+
+```ts
+createOtpLink({
+  secret,                       // required, 32+ chars
+  baseUrl,                      // required, https outside localhost
+  store, mailer,                // required
+
+  verifyPath: "/auth/verify",
+  ttlSeconds: 900,              // 60 … 86400
+  maxAttempts: 5,
+
+  code:  { length: 6,  alphabet: "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" },
+  token: { length: 48, alphabet: "a-zA-Z0-9" },
+
+  email: { product: "Acme", subject: ({ product }) => `Sign in to ${product}`, render },
+  binding: { enabled: false },  // tie the link to the requesting browser
+  rotation: { previous: [oldSecret] },
+  maxSendsPerAddress: { count: 5, windowSeconds: 900 },
+  rateLimiter,                  // any { check(key, now) }
+  shouldSend: async (email) => await userExists(email),   // close sign-ups, no leak
+  minimumStartDurationMs: 500,
+});
+```
+
+**Closing sign-ups without leaking who has an account** is the common case for `shouldSend`:
+
+```ts
+shouldSend: async (email) => Boolean(await db.findUser(email)),
+```
+
+`start` returns the same result and takes the same time either way, so probing the endpoint reveals nothing.
+
+**Rotating the secret** without invalidating live challenges:
+
+```ts
+{ secret: NEW, rotation: { previous: [OLD] } }   // drop OLD after one TTL
+```
+
+---
+
+## Errors
+
+Every failure throws an `OtpLinkError` with a stable `code`, a suggested `status`, and a `publicMessage` that is safe to show a user.
+
+```ts
+import { OtpLinkError } from "otplink";
+
+try {
+  await auth.verifyCode({ email, code });
+} catch (error) {
+  if (OtpLinkError.is(error)) {
+    error.code;               // "invalid_code" | "too_many_attempts" | …
+    error.publicMessage;      // safe to render
+    error.remainingAttempts;  // on invalid_code
+  }
+}
+```
+
+Codes: `invalid_email`, `rate_limited`, `invalid_challenge`, `invalid_code`, `too_many_attempts`, `invalid_token`, `binding_mismatch`, `delivery_failed`, `configuration_error`.
+
+Expired, already-used, and never-existed all collapse into one error on purpose — distinguishing them tells an attacker holding a captured token whether it was ever valid.
+
+---
+
+## Development
+
+```bash
+npm install     # one devDependency: typescript
+npm test        # node:test, no runner needed
+npm run build   # tsc only, dual ESM + CJS
+```
+
+No bundler, no test framework, no `@types/node`. The SQL suite runs against real SQLite via `node:sqlite`.
+
+---
+
+## License
+
+MIT
