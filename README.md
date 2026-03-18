@@ -2,7 +2,7 @@
 
 **One email, two ways in.** A passwordless auth primitive that issues a typed code *and* a scanner-safe magic link as a single challenge, delivered in one message.
 
-- **Zero runtime dependencies.** Web Standard APIs only.
+- **Zero runtime dependencies.** Web Standard APIs only. (`otplink/better-auth` declares Better Auth as an *optional* peer, so it installs nothing unless you import it.)
 - **Runs anywhere.** Node, Bun, Deno, Cloudflare Workers, Vercel Edge.
 - **No framework opinion.** Next.js, SvelteKit, Remix, Astro, Hono, Express, or your own routes.
 - **No database opinion.** Postgres, SQLite, D1, Turso, MySQL, or six methods of your own.
@@ -254,6 +254,49 @@ Seventeen checks, including firing 24 concurrent `consume` calls at one challeng
 
 ---
 
+## Better Auth
+
+```bash
+npm install otplink better-auth
+```
+
+```ts
+import { betterAuth } from "better-auth";
+import { otplink } from "otplink/better-auth";
+
+export const auth = betterAuth({
+  database: db,
+  plugins: [
+    otplink({
+      secret: process.env.OTPLINK_SECRET!,   // 32+ chars, from the environment
+      baseUrl: "https://example.com",
+      mailer: async (message) => { await send(message); },
+    }),
+  ],
+});
+```
+
+Then `npx @better-auth/cli generate` to create the challenge table, and `migrate` to apply it.
+
+| Endpoint | Method | What it does |
+|---|---|---|
+| `/sign-in/otplink` | `POST` | Issues one challenge and mails the code and the link |
+| `/sign-in/otplink/code` | `POST` | Redeems the typed code |
+| `/otplink/verify` | `GET` | Renders the confirmation page. **Consumes nothing.** |
+| `/otplink/verify` | `POST` | Redeems the link token |
+
+The `GET`/`POST` split is the point. Better Auth's built-in `magicLink` redeems on `GET`, which is why [discussion #6985](https://github.com/better-auth/better-auth/discussions/6985) is open: Defender Safe Links, Proofpoint, Mimecast, and Barracuda fetch every URL in inbound mail, so the scanner spends the credential and the user is told their brand-new link expired. The usual workaround — raising `allowedAttempts` — turns a single-use credential into a multi-use one, which is a downgrade dressed as a fix. Here the scanner gets HTML and the token survives; and because the same email carries a code on a *separate* secret, a user whose link is mangled entirely still has a way in.
+
+Sessions stay Better Auth's. otplink verifies control of an address and hands off to `internalAdapter` and `setSessionCookie`.
+
+**On the store.** The plugin persists challenges through Better Auth's own adapter, so there is no second database connection to configure. Its `Where` clause compares a field to a literal and never to another field, so `attempts < maxAttempts` cannot be expressed; the table stores `attemptsRemaining` and guards `attemptsRemaining > 0` instead. Same meaning, and the guard stays inside a single `updateMany`, which is what keeps `consume` an atomic compare-and-set. The bundled conformance suite runs against it.
+
+> **Note.** Better Auth types `updateMany` as `Promise<number>`. Kysely, Prisma, and Mongo return a count; the Drizzle adapter returns the raw driver result object and the memory adapter returns the updated record. The store normalizes all of these and treats anything it cannot read as *zero* rows, which fails closed.
+
+This entry point is ESM-only, because Better Auth is.
+
+---
+
 ## Security model
 
 | Property | How |
@@ -344,12 +387,12 @@ Expired, already-used, and never-existed all collapse into one error on purpose 
 ## Development
 
 ```bash
-npm install     # one devDependency: typescript
+npm install     # typescript, plus better-auth to type and test the plugin against
 npm test        # node:test, no runner needed
 npm run build   # tsc only, dual ESM + CJS
 ```
 
-No bundler, no test framework, no `@types/node`. The SQL suite runs against real SQLite via `node:sqlite`.
+No bundler, no test framework, no `@types/node`. The SQL suite runs against real SQLite via `node:sqlite`, and the Better Auth suite runs against Better Auth's own adapter rather than a hand-written double.
 
 ---
 

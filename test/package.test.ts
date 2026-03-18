@@ -52,6 +52,28 @@ test("the subpath entries resolve", { skip: !built && "run `npm run build` first
 
     const testing = await import(resolve(root, "dist/testing/index.js"));
     assert.equal(typeof testing.checkStoreConformance, "function");
+
+    // This one also proves the optional peer resolves at runtime: the module
+    // imports `better-auth/api` and `better-auth/cookies` at load time.
+    const betterAuth = await import(resolve(root, "dist/better-auth/index.js"));
+    assert.equal(typeof betterAuth.otplink, "function");
+    assert.equal(typeof betterAuth.createBetterAuthStore, "function");
+    assert.equal(typeof betterAuth.otplinkSchema, "function");
+});
+
+test("the Better Auth entry is ESM-only, deliberately", () => {
+    const pkg = requireCjs(resolve(root, "package.json")) as {
+        exports: Record<string, Record<string, string>>;
+    };
+
+    // Better Auth is ESM-only — its own package.json publishes no `require`
+    // condition — so a CommonJS consumer cannot use this entry point at all.
+    // Advertising one would resolve fine and then fail at load on every Node
+    // before 22.12, which is a worse error than not offering it. The other
+    // entries stay dual-published because they import nothing.
+    assert.equal(pkg.exports["./better-auth"]!["require"], undefined);
+    assert.equal(typeof pkg.exports["./better-auth"]!["import"], "string");
+    assert.equal(typeof pkg.exports["."]!["require"], "string");
 });
 
 test("the CommonJS build loads under require()", { skip: !built && "run `npm run build` first" }, () => {
@@ -91,6 +113,7 @@ test("declaration files ship alongside every entry point", { skip: !built && "ru
         "dist/stores/index.d.ts",
         "dist/http/index.d.ts",
         "dist/testing/index.d.ts",
+        "dist/better-auth/index.d.ts",
     ]) {
         assert.ok(existsSync(resolve(root, dts)), `missing ${dts}`);
     }
@@ -100,12 +123,27 @@ test("the published package declares no runtime dependencies", () => {
     const pkg = requireCjs(resolve(root, "package.json")) as {
         dependencies?: Record<string, string>;
         peerDependencies?: Record<string, string>;
+        peerDependenciesMeta?: Record<string, { optional?: boolean }>;
         devDependencies?: Record<string, string>;
     };
 
     assert.deepEqual(pkg.dependencies ?? {}, {}, "otplink must stay dependency-free");
-    assert.deepEqual(pkg.peerDependencies ?? {}, {}, "no peer dependencies either");
-    // One devDependency, and it is the compiler. Tests use node:test, the
-    // build is plain tsc, and the SQL suite runs on node:sqlite.
-    assert.deepEqual(Object.keys(pkg.devDependencies ?? {}), ["typescript"]);
+
+    // Every peer must be optional. An optional peer installs nothing for a
+    // user who never imports the entry point that needs it, so the
+    // zero-dependency guarantee survives; a *required* peer would quietly
+    // break it, which is why this asserts the flag rather than the absence.
+    for (const name of Object.keys(pkg.peerDependencies ?? {})) {
+        assert.equal(
+            pkg.peerDependenciesMeta?.[name]?.optional,
+            true,
+            `peer dependency ${name} must be marked optional`,
+        );
+    }
+    assert.deepEqual(Object.keys(pkg.peerDependencies ?? {}), ["better-auth"]);
+
+    // The compiler, plus the optional peer the plugin is typed and tested
+    // against. Tests use node:test, the build is plain tsc, and the SQL suite
+    // runs on node:sqlite.
+    assert.deepEqual(Object.keys(pkg.devDependencies ?? {}).sort(), ["better-auth", "typescript"]);
 });
