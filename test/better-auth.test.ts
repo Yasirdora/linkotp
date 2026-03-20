@@ -164,34 +164,56 @@ test("a spent challenge stays present so the user is told the right thing", asyn
     assert.deepEqual(second, { found: true, remaining: 0 });
 });
 
-test("affectedRows reads every shape Better Auth's adapters actually return", () => {
-    // Better Auth types `updateMany` as `Promise<number>`, and three of its
-    // five first-party adapters honour that. Drizzle returns the driver's
-    // result object and the memory adapter returns the updated record, so the
-    // single-use guarantee depends on reading all of them correctly.
-    assert.equal(affectedRows(1), 1, "Kysely, Prisma, Mongo");
+test("affectedRows reads every driver shape, and refuses to guess", () => {
+    // Better Auth types `updateMany` as `Promise<number>` and current versions
+    // deliver one, but through 1.6.2 — inside this package's supported peer
+    // range — the Drizzle adapter returned the raw driver result and the
+    // memory adapter returned the updated record. The single-use guarantee
+    // depends on reading all of them correctly.
+    assert.equal(affectedRows(1), 1, "a conforming adapter");
     assert.equal(affectedRows(0), 0);
     assert.equal(affectedRows(2n), 2);
 
-    assert.equal(affectedRows({ rowCount: 1 }), 1, "Drizzle on node-postgres");
-    assert.equal(affectedRows({ affectedRows: 1 }), 1, "Drizzle on mysql2");
-    assert.equal(affectedRows({ rowsAffected: 1 }), 1, "Drizzle on libSQL or D1");
-    assert.equal(affectedRows({ changes: 1 }), 1, "Drizzle on better-sqlite3");
+    assert.equal(affectedRows({ rowCount: 1 }), 1, "node-postgres, neon");
+    assert.equal(affectedRows({ rowsAffected: 1 }), 1, "planetscale, libSQL, D1 binding");
+    assert.equal(affectedRows({ changes: 1 }), 1, "better-sqlite3, node:sqlite");
     assert.equal(affectedRows({ changes: 0 }), 0, "a guard that matched nothing");
     assert.equal(affectedRows({ numUpdatedRows: 1n }), 1, "Kysely raw");
+    assert.equal(affectedRows({ meta: { changes: 1 } }), 1, "Cloudflare D1 nests it");
+    assert.equal(affectedRows({ meta: { changes: 0 } }), 0);
 
-    // The memory adapter hands back the row itself. Recognized by the column
-    // only otplink writes, and sound only because every guarded update in the
-    // store targets a unique key.
+    // mysql2 returns a one-element [ResultSetHeader] tuple whose length is 1
+    // no matter how many rows matched. Measuring the array would report a
+    // successful claim for an update that changed nothing — a losing racer
+    // would conclude it had won and a consumed challenge would redeem twice.
+    assert.equal(affectedRows([{ affectedRows: 1 }]), 1, "mysql2 matched one row");
+    assert.equal(affectedRows([{ affectedRows: 0 }]), 0, "mysql2 matched nothing");
+
+    // postgres-js and bun-sql return an Array subclass carrying `count`. On a
+    // non-returning write its length is 0 while `count` holds the truth, so
+    // `count` has to win over the array fallback.
+    const postgresJs = Object.assign([], { count: 1 });
+    assert.equal(affectedRows(postgresJs), 1, "postgres-js counts without returning rows");
+    assert.equal(affectedRows(Object.assign([], { count: 0 })), 0);
+
+    // A plain array of returned rows is still measured by length.
+    assert.equal(affectedRows([{ id: "a" }, { id: "b" }]), 2);
+    assert.equal(affectedRows([]), 0);
+
+    // The memory adapter through 1.6.2 handed back the row itself. Recognized
+    // by the column only otplink writes, and sound only because every guarded
+    // update in the store targets a unique key.
     assert.equal(affectedRows({ challengeId: "ch_1", email: "a@b.c" }), 1);
     assert.equal(affectedRows(null), 0, "the memory adapter's miss");
-
-    // Fail closed. A denied sign-in is loud; a wrongly granted one is silent.
     assert.equal(affectedRows(undefined), 0);
-    assert.equal(affectedRows({}), 0);
-    assert.equal(affectedRows({ someUnrelatedKey: true }), 0);
-    assert.equal(affectedRows("1"), 0);
-    assert.equal(affectedRows(Number.NaN), 0);
+
+    // Zero is a real answer meaning "you did not win". Returning it for a
+    // result we cannot read would present a broken adapter as an expired link
+    // to every user forever, so an unreadable shape is an error instead.
+    assert.throws(() => affectedRows({}), /affected-row count/);
+    assert.throws(() => affectedRows({ someUnrelatedKey: true }), /affected-row count/);
+    assert.throws(() => affectedRows("1"), /affected-row count/);
+    assert.throws(() => affectedRows(Number.NaN), /non-finite/);
 });
 
 test("the schema declares the constraints the design depends on", () => {

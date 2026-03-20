@@ -137,27 +137,67 @@ function toEpoch(value: Date | string | number): number {
     return new Date(value).getTime();
 }
 
-/** Driver result keys that carry an affected-row count, in preference order. */
-const COUNT_KEYS = [
-    "rowCount", // node-postgres
-    "affectedRows", // mysql2
-    "rowsAffected", // libSQL, D1
-    "changes", // better-sqlite3, node:sqlite
-    "numUpdatedRows", // Kysely
-    "modifiedCount", // MongoDB
-    "count", // Prisma
-] as const;
+/**
+ * Reads an affected-row count out of a raw driver result object.
+ *
+ * The shapes are driver-specific and there is no common interface: node-pg
+ * and neon expose `rowCount`, postgres-js and bun-sql return an Array
+ * subclass carrying `count`, mysql2 reports `affectedRows` on a
+ * `[ResultSetHeader]` tuple, planetscale and other serverless drivers use
+ * `rowsAffected`, better-sqlite3 and node:sqlite use `changes`, and
+ * Cloudflare D1 nests it under `meta.changes`.
+ *
+ * @returns the count, or undefined when this object carries none.
+ */
+function readDriverCount(result: unknown): number | undefined {
+    if (!result || typeof result !== "object") return undefined;
+    const driver = result as Record<string, unknown>;
+
+    const numeric = (value: unknown): number | undefined => {
+        if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+        if (typeof value === "bigint") return Number(value);
+        return undefined;
+    };
+
+    for (const key of ["rowCount", "count", "affectedRows", "rowsAffected", "changes", "numUpdatedRows", "modifiedCount"]) {
+        const found = numeric(driver[key]);
+        if (found !== undefined) return found;
+    }
+
+    // Cloudflare D1: https://developers.cloudflare.com/d1/worker-api/return-object/
+    const meta = driver["meta"];
+    if (meta && typeof meta === "object") {
+        return numeric((meta as Record<string, unknown>)["changes"]);
+    }
+
+    return undefined;
+}
 
 /**
  * Normalizes whatever `updateMany` returned into an affected-row count.
  *
- * Better Auth's adapter interface promises a number. Two of its five
- * first-party adapters do not deliver one: Drizzle returns the underlying
- * driver's result object, and the memory adapter returns the updated record.
+ * Better Auth's adapter interface promises a number, and its first-party
+ * adapters deliver one as of 1.7. They did not always: through 1.6.2 the
+ * Drizzle adapter returned the raw driver result object and the memory
+ * adapter returned the updated record, so trusting the declared type would
+ * have broken sign-in on Drizzle outright. Community adapters are written
+ * against the same interface and are under no such scrutiny.
+ *
  * Since the entire single-use guarantee rests on distinguishing "this caller
- * claimed the row" from "someone else did", guessing here would be
- * unacceptable, and trusting the declared type would break sign-in on Drizzle
- * outright.
+ * claimed the row" from "someone else did", the cost of reading the result
+ * defensively is a few branches and the cost of not doing so is a silent
+ * authentication bug.
+ *
+ * Two orderings here are load-bearing and easy to get backwards:
+ *
+ *   - `count` is read **before** the array fallback, because postgres-js
+ *     returns an Array subclass whose `length` is 0 on a non-returning write
+ *     while its `count` holds the real number.
+ *   - An array is only measured by `length` when its first element carries no
+ *     driver count, because mysql2 returns a one-element `[ResultSetHeader]`
+ *     tuple whose length is 1 no matter how many rows matched. Reading the
+ *     length there would report a successful claim for an update that
+ *     matched nothing — the one failure this function exists to prevent.
  *
  * The record-shaped case resolves to 1 only because **every guarded update in
  * this store targets a unique key** — `challengeId`, which the schema marks
@@ -165,33 +205,45 @@ const COUNT_KEYS = [
  * that invariant is ever broken, this function becomes wrong; do not add a
  * guarded update here keyed on anything non-unique.
  *
- * Anything unrecognized returns 0, which fails closed: the caller concludes
- * it did not win and declines the sign-in. A denied sign-in is a loud,
- * immediately visible bug; a wrongly granted one is a silent security
- * failure.
+ * Anything genuinely unrecognized throws rather than returning zero. Zero is
+ * a real answer meaning "you did not win", so silently returning it for an
+ * unreadable result would present a broken adapter as an expired link, to
+ * every user, forever. A thrown error names the problem once.
  */
 export function affectedRows(result: unknown): number {
-    if (typeof result === "number") return Number.isFinite(result) ? result : 0;
+    if (typeof result === "number") {
+        if (!Number.isFinite(result)) {
+            throw new Error(`otplink: adapter returned a non-finite affected-row count`);
+        }
+        return result;
+    }
     if (typeof result === "bigint") return Number(result);
+
+    // A legitimate miss: the memory adapter's "nothing matched".
     if (result === null || result === undefined) return 0;
-    if (Array.isArray(result)) return result.length;
 
     if (typeof result === "object") {
-        const record = result as Record<string, unknown>;
+        const direct = readDriverCount(result);
+        if (direct !== undefined) return direct;
 
-        for (const key of COUNT_KEYS) {
-            const value = record[key];
-            if (typeof value === "number" && Number.isFinite(value)) return value;
-            if (typeof value === "bigint") return Number(value);
+        if (Array.isArray(result)) {
+            // mysql2's `[ResultSetHeader]` is handled above via the element's
+            // own count; a plain array of returned rows is measured here.
+            const header = result.length > 0 ? readDriverCount(result[0]) : undefined;
+            return header ?? result.length;
         }
 
         // An adapter that hands back the row it updated. Recognized by the
         // column only otplink writes, so an unrelated result object cannot be
         // mistaken for a successful claim.
-        if (typeof record["challengeId"] === "string") return 1;
+        if (typeof (result as Record<string, unknown>)["challengeId"] === "string") return 1;
     }
 
-    return 0;
+    throw new Error(
+        "otplink: could not read an affected-row count from the Better Auth adapter's " +
+            `updateMany result (received ${typeof result}). This is an adapter ` +
+            "compatibility problem, not a failed sign-in; please report it.",
+    );
 }
 
 function toChallenge(row: Row): Challenge {

@@ -23,10 +23,12 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
 
 ### Changed
 
-- `better-auth` is declared as an **optional** peer dependency. `dependencies`
-  stays empty, and the peer installs nothing for anyone who does not import
-  `otplink/better-auth`. CI now asserts that every peer is optional rather than
-  that there are none.
+- `better-auth` is declared as an **optional** peer dependency, `>=1.7.0`.
+  `dependencies` stays empty, and the peer installs nothing for anyone who does
+  not import `otplink/better-auth`. CI now asserts that every peer is optional
+  rather than that there are none. The floor is 1.7 because that release
+  renamed `getIp` to `getIP` and added a required provisioning-source argument
+  to `internalAdapter.createUser`.
 
 ### Notes
 
@@ -35,10 +37,17 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
   it. The plugin's table stores `attemptsRemaining` and guards
   `attemptsRemaining > 0`, which is equivalent and keeps `consume` a single
   atomic compare-and-set.
-- Better Auth types `updateMany` as `Promise<number>`, but its Drizzle adapter
-  returns the driver's result object and its memory adapter returns the updated
-  record. The store normalizes every shape and treats anything unrecognized as
-  zero rows, failing closed.
+- Better Auth types `updateMany` as `Promise<number>`. Its first-party adapters
+  honour that as of 1.7; through 1.6.2 the Drizzle adapter returned the raw
+  driver result object and the memory adapter returned the updated record.
+  The store reads every documented driver shape — including mysql2's
+  single-element `[ResultSetHeader]` tuple and postgres-js's Array subclass,
+  both of which are misread by a naive `Array.length` — and throws on a shape
+  it cannot read rather than reporting zero, so an adapter incompatibility
+  cannot masquerade as an expired link.
+- New-user provisioning reports `method: "magic-link"` or `"email-otp"`
+  according to which arm the user actually redeemed, so an application's
+  `validateUserInfo` gate sees a method it recognizes.
 
 ## [0.1.0]
 

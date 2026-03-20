@@ -21,7 +21,7 @@
  * that.
  */
 
-import { APIError, createAuthEndpoint, getIp, originCheck } from "better-auth/api";
+import { APIError, createAuthEndpoint, getIP, originCheck } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 
 import type { OtpLinkOptions } from "../config.ts";
@@ -289,11 +289,21 @@ export function otplink(options: OtplinkPluginOptions) {
                 });
             }
             const name = identity.metadata?.["name"];
-            user = await internal.createUser({
-                email: identity.email,
-                emailVerified: true,
-                name: typeof name === "string" ? name : "",
-            });
+            user = await internal.createUser(
+                {
+                    email: identity.email,
+                    emailVerified: true,
+                    name: typeof name === "string" ? name : "",
+                },
+                // Report the arm the user actually redeemed rather than a
+                // label of our own. `ValidateUserInfoMethod` accepts an
+                // arbitrary string, but an application's `validateUserInfo`
+                // gate is written against the known ones, and an otplink
+                // challenge genuinely *is* a magic link and a one-time code —
+                // which of the two provisioned this account is the honest and
+                // more useful answer.
+                { method: identity.via === "link" ? "magic-link" : "email-otp" },
+            );
             isNewUser = true;
         }
 
@@ -389,7 +399,7 @@ export function otplink(options: OtplinkPluginOptions) {
                             purpose: "sign-in",
                             metadata,
                             ...(ctx.request
-                                ? { rateLimitKey: getIp(ctx.request, ctx.context.options) ?? "" }
+                                ? { rateLimitKey: getIP(ctx.request, ctx.context.options) ?? "" }
                                 : {}),
                         });
 
@@ -429,7 +439,7 @@ export function otplink(options: OtplinkPluginOptions) {
                             code: ctx.body.code,
                             purpose: "sign-in",
                             ...(ctx.request
-                                ? { rateLimitKey: getIp(ctx.request, ctx.context.options) ?? "" }
+                                ? { rateLimitKey: getIP(ctx.request, ctx.context.options) ?? "" }
                                 : {}),
                         });
                     } catch (error) {
@@ -522,7 +532,7 @@ export function otplink(options: OtplinkPluginOptions) {
                         identity = await auth.verifyToken({
                             token: ctx.body.token,
                             ...(ctx.request
-                                ? { rateLimitKey: getIp(ctx.request, ctx.context.options) ?? "" }
+                                ? { rateLimitKey: getIP(ctx.request, ctx.context.options) ?? "" }
                                 : {}),
                         });
                     } catch (error) {

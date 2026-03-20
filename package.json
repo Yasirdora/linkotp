@@ -76,9 +76,8 @@
     "verify": "npm run typecheck && npm run test",
     "prepublishOnly": "npm run clean && npm run verify && npm run build"
   },
-  "dependencies": {},
   "peerDependencies": {
-    "better-auth": ">=1.6.0"
+    "better-auth": ">=1.7.0"
   },
   "peerDependenciesMeta": {
     "better-auth": {
@@ -86,7 +85,7 @@
     }
   },
   "devDependencies": {
-    "better-auth": "1.6.2",
+    "better-auth": "1.7.2",
     "typescript": "^5.7.2"
   },
   "publishConfig": {
