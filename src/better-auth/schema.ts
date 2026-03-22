@@ -10,16 +10,24 @@
  * camelCase in the database.
  */
 
+import type { BetterAuthPlugin } from "better-auth/types";
+
 import { DEFAULT_MODEL } from "./store.ts";
 
-/** Loosely typed to avoid importing Better Auth's types for an optional peer. */
-export interface PluginSchema {
-    readonly [model: string]: {
-        readonly fields: Readonly<Record<string, Record<string, unknown>>>;
-        readonly modelName?: string;
-        readonly disableMigration?: boolean;
-    };
-}
+/**
+ * Derived from Better Auth's own plugin type rather than restated.
+ *
+ * A hand-written approximation looks harmless and is not: field attributes
+ * typed as `Record<string, unknown>` are not assignable to `DBFieldAttribute`,
+ * which quietly makes the whole plugin fail to satisfy `BetterAuthPlugin` —
+ * the schema is the only structurally-checked part of it. Deriving keeps this
+ * exact by construction, and costs nothing, since this entry point already
+ * requires `better-auth`.
+ *
+ * `BetterAuthPluginDBSchema` is not re-exported from `better-auth` itself, so
+ * it is reached through the plugin type, which is.
+ */
+export type PluginSchema = NonNullable<BetterAuthPlugin["schema"]>;
 
 export interface SchemaOptions {
     /** @default "otplinkChallenge" */

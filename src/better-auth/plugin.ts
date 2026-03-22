@@ -21,7 +21,7 @@
  * that.
  */
 
-import { APIError, createAuthEndpoint, getIP, originCheck } from "better-auth/api";
+import { APIError, createAuthEndpoint, getIP, isAPIError, originCheck } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 
 import type { OtpLinkOptions } from "../config.ts";
@@ -29,6 +29,7 @@ import { createOtpLink, type OtpLink } from "../core.ts";
 import { OtpLinkError, type OtpLinkErrorCode } from "../errors.ts";
 import { createNonce, renderInterstitial, securityHeaders } from "../http/interstitial.ts";
 import type { TokenStore, VerifiedIdentity } from "../types.ts";
+import { OTPLINK_ERROR_CODES } from "./error-codes.ts";
 import { otplinkSchema } from "./schema.ts";
 import { createBetterAuthStore, DEFAULT_MODEL, type BetterAuthAdapterLike } from "./store.ts";
 import { object, optional, record, string } from "./validate.ts";
@@ -68,20 +69,22 @@ export interface OtplinkPluginOptions extends Omit<OtpLinkOptions, "store"> {
     /** Where to send the browser after a successful sign-in. @default "/" */
     readonly defaultCallbackURL?: string;
 
+    /**
+     * Where to send the browser when a link *fails*, with `?error=<code>`
+     * appended.
+     *
+     * This is not an edge case. A link that has expired, been redeemed, or
+     * been retired by too many wrong code guesses is the ordinary end of a
+     * challenge's life, and the person clicking it is in a browser, not an
+     * XHR. Without somewhere to land they are shown a raw JSON error body.
+     *
+     * @default the value of `defaultCallbackURL`
+     */
+    readonly errorCallbackURL?: string;
+
     /** Per-path throttle Better Auth applies in front of the endpoints. */
     readonly rateLimit?: { readonly window?: number; readonly max?: number };
 }
-
-export const OTPLINK_ERROR_CODES = {
-    OTPLINK_INVALID_EMAIL: "Enter a valid email address.",
-    OTPLINK_RATE_LIMITED: "Too many attempts. Please wait a moment and try again.",
-    OTPLINK_INVALID_CODE: "That code is incorrect or has expired.",
-    OTPLINK_TOO_MANY_ATTEMPTS: "Too many incorrect attempts. Request a new code.",
-    OTPLINK_INVALID_TOKEN: "That link is no longer valid. Request a new one.",
-    OTPLINK_BINDING_MISMATCH: "Open the link in the same browser you started from.",
-    OTPLINK_DELIVERY_FAILED: "We couldn't send that email. Please try again.",
-    OTPLINK_SIGNUP_DISABLED: "That address does not have an account.",
-} as const;
 
 /** Maps the protocol's error taxonomy onto Better Auth's HTTP errors. */
 const STATUS: Record<
@@ -173,13 +176,17 @@ const verifyTokenBody = object({
     callbackURL: optional(
         string({ description: "Where to redirect after a successful sign-in", maxLength: 2048 }),
     ),
+    errorCallbackURL: optional(
+        string({ description: "Where to redirect when the link is no longer valid", maxLength: 2048 }),
+    ),
 });
 
+// No `callbackURL` here on purpose. The click can land in a different browser
+// from the one that started the flow, so the destination travels with the
+// challenge rather than with the link, and accepting a query parameter the
+// page then dropped would be surface that quietly does nothing.
 const verifyQuery = object({
     token: string({ description: "The link token", maxLength: 512 }),
-    callbackURL: optional(
-        string({ description: "Where to redirect after a successful sign-in", maxLength: 2048 }),
-    ),
 });
 
 export function otplink(options: OtplinkPluginOptions) {
@@ -266,6 +273,27 @@ export function otplink(options: OtplinkPluginOptions) {
     }
 
     /**
+     * Derives otplink's per-caller rate-limit dimension, conventionally the IP.
+     *
+     * Returned as a spreadable fragment so an unresolvable client is *absent*
+     * rather than empty. The distinction matters: otplink skips throttling
+     * when the key is `undefined`, but an empty string is a perfectly valid
+     * key, and every caller sharing it would collapse them into a single
+     * bucket — the first few requests would then rate-limit everyone else.
+     * `getIP` returns null whenever `disableIpTracking` is set or no
+     * trustworthy address can be resolved from the forwarded chain, so this
+     * is a live path, not a theoretical one.
+     */
+    function clientKey(ctx: {
+        request?: Request | undefined;
+        context: { options: Parameters<typeof getIP>[1] };
+    }): { rateLimitKey?: string } {
+        if (!ctx.request) return {};
+        const ip = getIP(ctx.request, ctx.context.options);
+        return ip ? { rateLimitKey: ip } : {};
+    }
+
+    /**
      * Turns a verified address into a Better Auth session.
      *
      * Everything past this point is Better Auth's: user lookup, creation,
@@ -284,7 +312,7 @@ export function otplink(options: OtplinkPluginOptions) {
         if (!user) {
             if (options.disableSignUp) {
                 throw new APIError("FORBIDDEN", {
-                    message: OTPLINK_ERROR_CODES.OTPLINK_SIGNUP_DISABLED,
+                    message: OTPLINK_ERROR_CODES.OTPLINK_SIGNUP_DISABLED.message,
                     code: "OTPLINK_SIGNUP_DISABLED",
                 });
             }
@@ -398,9 +426,7 @@ export function otplink(options: OtplinkPluginOptions) {
                             email: body.email,
                             purpose: "sign-in",
                             metadata,
-                            ...(ctx.request
-                                ? { rateLimitKey: getIP(ctx.request, ctx.context.options) ?? "" }
-                                : {}),
+                            ...clientKey(ctx),
                         });
 
                         return ctx.json({
@@ -438,9 +464,7 @@ export function otplink(options: OtplinkPluginOptions) {
                             email: ctx.body.email,
                             code: ctx.body.code,
                             purpose: "sign-in",
-                            ...(ctx.request
-                                ? { rateLimitKey: getIP(ctx.request, ctx.context.options) ?? "" }
-                                : {}),
+                            ...clientKey(ctx),
                         });
                     } catch (error) {
                         return toApiError(error);
@@ -451,9 +475,10 @@ export function otplink(options: OtplinkPluginOptions) {
                         identity,
                     );
 
-                    const target = ctx.body.callbackURL ?? identity.metadata?.["callbackURL"];
+                    // The code flow is normally an XHR, so it answers with
+                    // JSON unless the caller explicitly asked to be redirected.
                     if (ctx.body.callbackURL !== undefined) {
-                        throw ctx.redirect(safeRedirect(ctx, target));
+                        throw ctx.redirect(safeRedirect(ctx, ctx.body.callbackURL));
                     }
 
                     return ctx.json({
@@ -518,6 +543,21 @@ export function otplink(options: OtplinkPluginOptions) {
                     requireHeaders: true,
                     use: [originCheck((ctx) => (ctx.body as { callbackURL?: string }).callbackURL ?? "/")],
                     metadata: {
+                        // The confirmation page is plain HTML submitting a
+                        // plain form, so this arrives as
+                        // `application/x-www-form-urlencoded`. Better Auth's
+                        // router allows JSON only by default and answers
+                        // anything else with 415, which would reject the
+                        // submission that is the entire point of the
+                        // GET/POST split. Opting in mirrors what the
+                        // device-authorization flow does for the same reason.
+                        //
+                        // A no-JavaScript form post is also the fallback that
+                        // makes the "manual" interstitial mode work at all.
+                        allowedMediaTypes: [
+                            "application/json",
+                            "application/x-www-form-urlencoded",
+                        ],
                         openapi: {
                             operationId: "verifyOtplinkToken",
                             description: "Redeem the magic-link token from an otplink email",
@@ -527,21 +567,58 @@ export function otplink(options: OtplinkPluginOptions) {
                 async (ctx) => {
                     const auth = resolve(ctx);
 
+                    /**
+                     * Ends the request at the error page rather than on a JSON
+                     * error body.
+                     *
+                     * Everything reaching this endpoint arrived by a human
+                     * clicking a link, and the failure modes are ordinary:
+                     * the challenge expired, someone already redeemed it, or
+                     * the code arm burned its attempts. A 400 rendered as raw
+                     * JSON is the wrong answer to all of them.
+                     */
+                    const fail = (code: string): never => {
+                        const target =
+                            ctx.body.errorCallbackURL ??
+                            options.errorCallbackURL ??
+                            defaultCallbackURL;
+                        const url = new URL(safeRedirect(ctx, target));
+                        url.searchParams.set("error", code);
+                        throw ctx.redirect(url.toString());
+                    };
+
                     let identity: VerifiedIdentity;
                     try {
                         identity = await auth.verifyToken({
                             token: ctx.body.token,
-                            ...(ctx.request
-                                ? { rateLimitKey: getIP(ctx.request, ctx.context.options) ?? "" }
-                                : {}),
+                            ...clientKey(ctx),
                         });
                     } catch (error) {
-                        return toApiError(error);
+                        // Expired, already used, and never existed are one
+                        // code by design: distinguishing them would tell
+                        // someone holding a captured token whether it was
+                        // ever valid.
+                        if (OtpLinkError.is(error)) fail(error.code);
+                        throw error;
                     }
 
-                    // The session cookie is set on `ctx`, so it rides along on
-                    // the redirect response below.
-                    await establishSession(ctx as unknown as SessionContext, identity);
+                    try {
+                        // The session cookie is set on `ctx`, so it rides
+                        // along on the redirect response below.
+                        await establishSession(ctx as unknown as SessionContext, identity);
+                    } catch (error) {
+                        // `disableSignUp`, or an application's own
+                        // `validateUserInfo` gate, rejects here. Same
+                        // reasoning: the browser needs a page, not a body.
+                        if (isAPIError(error)) {
+                            fail(
+                                typeof error.body?.code === "string"
+                                    ? error.body.code
+                                    : "sign_in_failed",
+                            );
+                        }
+                        throw error;
+                    }
 
                     // The link flow is a browser navigation, so it always
                     // redirects rather than returning JSON. The destination

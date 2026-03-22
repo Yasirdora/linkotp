@@ -20,6 +20,14 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
   conformance suite against Better Auth's own adapter.
 - `otplinkSchema` — the plugin's table, in Better Auth's schema format, so
   `@better-auth/cli generate` produces the migration.
+- `otplink/better-auth/client` — the client plugin, so `authClient.signIn.otplink`
+  exists and is typed by inference from the server half. It imports the server
+  plugin as a type only, so nothing but a dependency-free constants module
+  reaches the browser bundle.
+- The link flow redirects to `errorCallbackURL` with `?error=<code>` when a
+  challenge has expired, been redeemed, or run out of attempts. Those are the
+  ordinary end of a challenge's life and the person clicking is in a browser,
+  so a JSON error body was the wrong answer.
 
 ### Changed
 

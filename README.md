@@ -278,6 +278,20 @@ export const auth = betterAuth({
 
 Then `npx @better-auth/cli generate` to create the challenge table, and `migrate` to apply it.
 
+On the client:
+
+```ts
+import { createAuthClient } from "better-auth/client";
+import { otplinkClient } from "otplink/better-auth/client";
+
+export const authClient = createAuthClient({ plugins: [otplinkClient()] });
+
+await authClient.signIn.otplink({ email });            // sends the email
+await authClient.signIn.otplink.code({ email, code }); // redeems the typed code
+```
+
+The link arm needs no client call — the user clicks it and lands back on your app with a session. Method names, argument types, and return types are all inferred from the server plugin, so there is nothing to keep in sync.
+
 | Endpoint | Method | What it does |
 |---|---|---|
 | `/sign-in/otplink` | `POST` | Issues one challenge and mails the code and the link |
@@ -288,6 +302,25 @@ Then `npx @better-auth/cli generate` to create the challenge table, and `migrate
 The `GET`/`POST` split is the point. Better Auth's built-in `magicLink` redeems on `GET`, which is why [discussion #6985](https://github.com/better-auth/better-auth/discussions/6985) is open: Defender Safe Links, Proofpoint, Mimecast, and Barracuda fetch every URL in inbound mail, so the scanner spends the credential and the user is told their brand-new link expired. The usual workaround — raising `allowedAttempts` — turns a single-use credential into a multi-use one, which is a downgrade dressed as a fix. Here the scanner gets HTML and the token survives; and because the same email carries a code on a *separate* secret, a user whose link is mangled entirely still has a way in.
 
 Sessions stay Better Auth's. otplink verifies control of an address and hands off to `internalAdapter` and `setSessionCookie`.
+
+A link that has expired, been redeemed, or been retired by too many wrong guesses is the ordinary end of a challenge's life, and the person clicking it is in a browser. Those all redirect to `errorCallbackURL` with `?error=<code>` rather than rendering a JSON error body:
+
+```ts
+otplink({
+  // ...
+  defaultCallbackURL: "/dashboard",
+  errorCallbackURL: "/sign-in",   // receives ?error=invalid_token
+});
+```
+
+Expired rows are inert — the `consume` guard enforces expiry regardless — but they do accumulate. Better Auth has no scheduler, so call `sweep()` from your own cron if table size matters:
+
+```ts
+import { createBetterAuthStore } from "otplink/better-auth";
+
+const { adapter } = await auth.$context;      // note: $context is a promise
+await createBetterAuthStore({ adapter }).deleteExpired(Date.now());
+```
 
 **On the store.** The plugin persists challenges through Better Auth's own adapter, so there is no second database connection to configure. Its `Where` clause compares a field to a literal and never to another field, so `attempts < maxAttempts` cannot be expressed; the table stores `attemptsRemaining` and guards `attemptsRemaining > 0` instead. Same meaning, and the guard stays inside a single `updateMany`, which is what keeps `consume` an atomic compare-and-set. The bundled conformance suite runs against it.
 

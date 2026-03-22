@@ -24,8 +24,11 @@
  * all in `dependencies`.
  */
 
-export { otplink, OTPLINK_ERROR_CODES } from "./plugin.ts";
+export { otplink } from "./plugin.ts";
 export type { OtplinkPluginOptions } from "./plugin.ts";
+
+export { OTPLINK_ERROR_CODES } from "./error-codes.ts";
+export type { OtplinkErrorCode } from "./error-codes.ts";
 
 export { createBetterAuthStore, DEFAULT_MODEL } from "./store.ts";
 export type {

@@ -59,6 +59,13 @@ test("the subpath entries resolve", { skip: !built && "run `npm run build` first
     assert.equal(typeof betterAuth.otplink, "function");
     assert.equal(typeof betterAuth.createBetterAuthStore, "function");
     assert.equal(typeof betterAuth.otplinkSchema, "function");
+
+    // The client half must load with *no* better-auth import of its own: it
+    // ships to the browser, and pulling the server plugin in would drag
+    // `better-auth/api` and otplink's protocol core along with it.
+    const client = await import(resolve(root, "dist/better-auth/client.js"));
+    assert.equal(typeof client.otplinkClient, "function");
+    assert.equal(client.otplinkClient().id, "otplink");
 });
 
 test("the Better Auth entry is ESM-only, deliberately", () => {
@@ -72,6 +79,7 @@ test("the Better Auth entry is ESM-only, deliberately", () => {
     // before 22.12, which is a worse error than not offering it. The other
     // entries stay dual-published because they import nothing.
     assert.equal(pkg.exports["./better-auth"]!["require"], undefined);
+    assert.equal(pkg.exports["./better-auth/client"]!["require"], undefined);
     assert.equal(typeof pkg.exports["./better-auth"]!["import"], "string");
     assert.equal(typeof pkg.exports["."]!["require"], "string");
 });
@@ -114,6 +122,7 @@ test("declaration files ship alongside every entry point", { skip: !built && "ru
         "dist/http/index.d.ts",
         "dist/testing/index.d.ts",
         "dist/better-auth/index.d.ts",
+        "dist/better-auth/client.d.ts",
     ]) {
         assert.ok(existsSync(resolve(root, dts)), `missing ${dts}`);
     }

@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
+import type { BetterAuthPlugin } from "better-auth/types";
 
 import { checkStoreConformance } from "../src/testing/conformance.ts";
 import {
@@ -12,6 +14,8 @@ import {
 } from "../src/better-auth/store.ts";
 import { otplinkSchema } from "../src/better-auth/schema.ts";
 import { otplink } from "../src/better-auth/plugin.ts";
+import { otplinkClient } from "../src/better-auth/client.ts";
+import { OTPLINK_ERROR_CODES } from "../src/better-auth/error-codes.ts";
 import { object, optional, record, string } from "../src/better-auth/validate.ts";
 import { SECRET, BASE_URL } from "./helpers.ts";
 
@@ -300,4 +304,194 @@ test("request validators reject junk without pulling in a validation library", a
 
     assert.equal((await validate("nope")).issues?.length, 1);
     assert.equal((await validate([])).issues?.length, 1);
+
+    // Optionality has to survive into the *inferred* type, not just the
+    // runtime check. When it did not, every caller was told to supply every
+    // optional field, and no runtime assertion in this file noticed.
+    type Body = NonNullable<(typeof schema)["~standard"]["types"]>["input"];
+    const minimal: Body = { email: "person@example.com" };
+    const full: Body = {
+        email: "person@example.com",
+        callbackURL: "/dashboard",
+        metadata: { plan: "pro" },
+    };
+    assert.equal(minimal.email, full.email);
+});
+
+
+/**
+ * A complete Better Auth instance with the plugin mounted.
+ *
+ * Everything above this point tests otplink's own pieces. This tests the
+ * thing a user actually installs: real routing, real body parsing, real
+ * middleware, real session cookies. It is the only level at which a mistake
+ * in the *contract* — a rejected content type, a plugin shape Better Auth
+ * will not accept — can show up at all.
+ */
+function instance() {
+    const db: Record<string, unknown[]> = {
+        user: [],
+        session: [],
+        account: [],
+        verification: [],
+        [DEFAULT_MODEL]: [],
+    };
+    const sent: { text: string; html: string }[] = [];
+
+    const auth = betterAuth({
+        secret: "a-better-auth-secret-that-is-at-least-32-chars",
+        baseURL: "https://example.com",
+        database: memoryAdapter(db),
+        plugins: [
+            otplink({
+                secret: SECRET,
+                baseUrl: BASE_URL,
+                minimumStartDurationMs: 0,
+                mailer: async (message) => {
+                    sent.push({ text: message.text, html: message.html });
+                },
+            }),
+        ],
+    });
+
+    const last = () => {
+        const message = sent.at(-1);
+        if (!message) throw new Error("no message was sent");
+        const link = /https?:\/\/[^\s]+/.exec(message.text)?.[0];
+        const code = /\n {4}([A-Z0-9 ]+)\n/.exec(message.text)?.[1]?.replace(/ /g, "");
+        if (!link || !code) throw new Error("could not recover the link or code");
+        return { link, code, token: new URL(link).searchParams.get("token")! };
+    };
+
+    const post = (path: string, body: Record<string, string>) =>
+        auth.handler(
+            new Request(`https://example.com/api/auth${path}`, {
+                method: "POST",
+                headers: {
+                    "content-type": "application/x-www-form-urlencoded",
+                    origin: "https://example.com",
+                },
+                body: new URLSearchParams(body),
+            }),
+        );
+
+    /** `noUncheckedIndexedAccess` is on, and these tables always exist. */
+    const rows = (table: string): unknown[] => db[table] ?? [];
+
+    return { auth, db, sent, last, post, rows };
+}
+
+test("the plugin satisfies Better Auth's plugin contract", () => {
+    // A type-level assertion, checked by `npm run typecheck`. It earns its
+    // place: `$ERROR_CODES` must be `Record<string, RawError>` rather than
+    // the plain message map it looks like it should be, and nothing else in
+    // this file would have caught that — every behavioural test passed while
+    // the plugin was not a valid BetterAuthPlugin at all.
+    const plugin: BetterAuthPlugin = otplink({
+        secret: SECRET,
+        baseUrl: BASE_URL,
+        mailer: async () => {},
+    });
+    assert.equal(plugin.id, "otplink");
+    assert.equal(OTPLINK_ERROR_CODES.OTPLINK_INVALID_TOKEN.code, "OTPLINK_INVALID_TOKEN");
+    assert.equal(typeof OTPLINK_ERROR_CODES.OTPLINK_INVALID_TOKEN.message, "string");
+
+    // The client half is inferred from the server half, so this is the only
+    // place the two are checked against each other.
+    const client = otplinkClient();
+    assert.equal(client.id, "otplink");
+    assert.equal(client.atomListeners[0].matcher("/otplink/verify"), true);
+    assert.equal(client.atomListeners[0].matcher("/sign-in/otplink"), false);
+});
+
+test("a scanner cannot spend the link, but the person can", async () => {
+    const { auth, last, post, rows } = instance();
+
+    await auth.api.signInOtplink({
+        body: { email: "person@example.com" },
+        headers: new Headers(),
+    });
+
+    const { link, token } = last();
+    // The link has to resolve to where Better Auth is actually mounted.
+    assert.equal(new URL(link).pathname, "/api/auth/otplink/verify");
+
+    // Exactly what Defender Safe Links, Proofpoint, Mimecast and Barracuda
+    // do to every URL in inbound mail, before the recipient sees it.
+    for (let i = 0; i < 3; i++) {
+        const scan = await auth.handler(new Request(link, { method: "GET" }));
+        assert.equal(scan.status, 200, "the confirmation page renders");
+        assert.equal(scan.headers.get("set-cookie"), null, "a GET must not mint a session");
+        assert.match(scan.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+        assert.match(scan.headers.get("cache-control") ?? "", /no-store/);
+        assert.equal(scan.headers.get("referrer-policy"), "no-referrer");
+    }
+    assert.equal(rows("session").length, 0, "three scans created no sessions");
+
+    // The confirmation page submits a plain HTML form, so this arrives as
+    // form-urlencoded. Better Auth's router rejects that with 415 unless the
+    // endpoint opts in, which is invisible to every test below this level.
+    const redeem = await post("/otplink/verify", { token });
+    assert.equal(redeem.status, 302, "the link flow redirects rather than returning JSON");
+    assert.match(redeem.headers.get("set-cookie") ?? "", /session_token=/);
+    assert.equal(redeem.headers.get("location"), "https://example.com/");
+    assert.equal(rows("user").length, 1, "the account was provisioned");
+    assert.equal(rows("session").length, 1);
+
+    // The scanner's three fetches did not consume it; this second redemption
+    // must, because the first one did.
+    const replay = await post("/otplink/verify", { token });
+    assert.equal(replay.status, 302);
+    assert.equal(
+        replay.headers.get("location"),
+        "https://example.com/?error=invalid_token",
+        "an expired or spent link lands on a page, not on a JSON error body",
+    );
+    assert.equal(rows("session").length, 1, "the replay created no second session");
+});
+
+test("the typed code is a second, independent way in", async () => {
+    const { auth, last, rows } = instance();
+
+    await auth.api.signInOtplink({
+        body: { email: "person@example.com" },
+        headers: new Headers(),
+    });
+    const { code, token } = last();
+
+    const wrong = await auth.handler(
+        new Request("https://example.com/api/auth/sign-in/otplink/code", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: "https://example.com" },
+            body: JSON.stringify({ email: "person@example.com", code: "AAAAAA" }),
+        }),
+    );
+    assert.equal(wrong.status, 400);
+    assert.equal(rows("session").length, 0);
+
+    const right = await auth.handler(
+        new Request("https://example.com/api/auth/sign-in/otplink/code", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: "https://example.com" },
+            body: JSON.stringify({ email: "person@example.com", code }),
+        }),
+    );
+    assert.equal(right.status, 200);
+    assert.match(right.headers.get("set-cookie") ?? "", /session_token=/);
+    assert.equal(rows("session").length, 1);
+
+    // Redeeming either arm retires the other: they are two secrets on one
+    // challenge, not two challenges.
+    const link = await auth.handler(
+        new Request("https://example.com/api/auth/otplink/verify", {
+            method: "POST",
+            headers: {
+                "content-type": "application/x-www-form-urlencoded",
+                origin: "https://example.com",
+            },
+            body: new URLSearchParams({ token }),
+        }),
+    );
+    assert.equal(link.headers.get("location"), "https://example.com/?error=invalid_token");
+    assert.equal(rows("session").length, 1);
 });

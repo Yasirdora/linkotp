@@ -29,9 +29,19 @@ export type StandardResult<Output> =
     | { readonly value: Output; readonly issues?: undefined }
     | { readonly issues: ReadonlyArray<{ readonly message: string; readonly path?: string[] }> };
 
-/** One property of an object schema. */
-export interface Field<T> {
-    readonly optional: boolean;
+/**
+ * One property of an object schema.
+ *
+ * `Optional` is a *literal* type parameter rather than only a runtime field,
+ * and that is load-bearing. {@link Infer} decides whether a key is required
+ * by asking whether `optional` extends `true`, and a plain `boolean` extends
+ * neither `true` nor `false` — so carrying optionality only as a value would
+ * silently sort every field into the required bucket. The visible symptom is
+ * a caller being told to supply `callbackURL`, `name` and `metadata` on a
+ * request that needs none of them.
+ */
+export interface Field<T = unknown, Optional extends boolean = boolean> {
+    readonly optional: Optional;
     /** Describes the field for OpenAPI output. */
     readonly description: string;
     parse(value: unknown): { ok: true; value: T } | { ok: false; message: string };
@@ -52,7 +62,7 @@ interface StringFieldOptions {
     readonly minLength?: number;
 }
 
-export function string(options: StringFieldOptions): Field<string> {
+export function string(options: StringFieldOptions): Field<string, false> {
     const min = options.minLength ?? 1;
     return {
         optional: false,
@@ -73,7 +83,7 @@ export function string(options: StringFieldOptions): Field<string> {
 }
 
 /** A JSON object passed through verbatim, for caller metadata. */
-export function record(description: string): Field<Record<string, unknown>> {
+export function record(description: string): Field<Record<string, unknown>, false> {
     return {
         optional: false,
         description,
@@ -86,19 +96,25 @@ export function record(description: string): Field<Record<string, unknown>> {
     };
 }
 
-export function optional<T>(field: Field<T>): Field<T> {
+export function optional<T>(field: Field<T, boolean>): Field<T, true> {
     return { ...field, optional: true };
 }
 
-type Shape = Record<string, Field<unknown>>;
+type Shape = Record<string, Field<unknown, boolean>>;
 
 /** Required keys stay required; `optional()` keys become optional properties. */
 type Infer<S extends Shape> = {
-    [K in keyof S as S[K] extends { optional: true } ? never : K]: S[K] extends Field<infer T>
+    [K in keyof S as S[K]["optional"] extends true ? never : K]: S[K] extends Field<
+        infer T,
+        boolean
+    >
         ? T
         : never;
 } & {
-    [K in keyof S as S[K] extends { optional: true } ? K : never]?: S[K] extends Field<infer T>
+    [K in keyof S as S[K]["optional"] extends true ? K : never]?: S[K] extends Field<
+        infer T,
+        boolean
+    >
         ? T
         : never;
 };
