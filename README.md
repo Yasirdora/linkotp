@@ -328,6 +328,8 @@ await createBetterAuthStore({ adapter }).deleteExpired(Date.now());
 
 Requires `better-auth@>=1.7.0`, and this entry point is ESM-only, because Better Auth is.
 
+**Not yet supported here:** device binding (`binding.enabled`), which needs a cookie this entry point does not yet set — the plugin refuses to start rather than ignore it, so nobody deploys believing they have it. `otplink/http` implements it. The plugin also covers sign-in only; email verification and password reset are `purpose`s the core supports but the plugin does not expose.
+
 ---
 
 ## Security model

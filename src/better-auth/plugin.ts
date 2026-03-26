@@ -194,6 +194,23 @@ export function otplink(options: OtplinkPluginOptions) {
     const interstitialMode = options.interstitialMode ?? "auto";
     const defaultCallbackURL = options.defaultCallbackURL ?? "/";
 
+    // Device binding ties a challenge to the browser that requested it, which
+    // this entry point does not yet wire up: it needs a cookie set on the
+    // start response and read back on both verify paths. Accepting the option
+    // and ignoring it would be the worst outcome — `bindingHash` would be
+    // null on every challenge, the verify path would skip the check because
+    // null means "issued while binding was off", and a deployment would
+    // believe it had a protection it does not have. Refusing to start is the
+    // honest answer until it is implemented.
+    if (options.binding?.enabled) {
+        throw new OtpLinkError(
+            "configuration_error",
+            "otplink/better-auth does not support `binding.enabled` yet. Remove the option, " +
+                "or use the framework-agnostic handler from `otplink/http`, which implements " +
+                "device binding with its own cookie.",
+        );
+    }
+
     // Validate eagerly, at `betterAuth()` time, by building a throwaway
     // instance against a store that cannot be used. The whole point of
     // otplink validating its options in the constructor is that a weak

@@ -271,6 +271,29 @@ test("plugin configuration is validated at construction, not on the first reques
         () => otplink({ secret: SECRET, baseUrl: "http://example.com", mailer: async () => {} }),
         /https/i,
     );
+
+    // `binding` is part of the options this plugin inherits but not yet part
+    // of what it implements. Silently ignoring it would leave a deployment
+    // believing it had bound challenges to the originating browser when every
+    // challenge was in fact unbound.
+    assert.throws(
+        () =>
+            otplink({
+                secret: SECRET,
+                baseUrl: BASE_URL,
+                mailer: async () => {},
+                binding: { enabled: true },
+            }),
+        /binding/i,
+    );
+    assert.doesNotThrow(() =>
+        otplink({
+            secret: SECRET,
+            baseUrl: BASE_URL,
+            mailer: async () => {},
+            binding: { enabled: false },
+        }),
+    );
 });
 
 test("request validators reject junk without pulling in a validation library", async () => {
@@ -494,4 +517,68 @@ test("the typed code is a second, independent way in", async () => {
     );
     assert.equal(link.headers.get("location"), "https://example.com/?error=invalid_token");
     assert.equal(rows("session").length, 1);
+});
+
+
+test("the emailed link resolves wherever Better Auth is mounted", async () => {
+    // The link is built at send time from `baseURL` and `basePath`, and a
+    // wrong path here is invisible until a real user clicks a real email.
+    // `baseURL` sometimes already carries the base path and sometimes does
+    // not, which is the case the derivation has to get right.
+    const mount = async (config: { baseURL: string; basePath?: string }) => {
+        const db: Record<string, unknown[]> = {
+            user: [],
+            session: [],
+            account: [],
+            verification: [],
+            [DEFAULT_MODEL]: [],
+        };
+        const sent: string[] = [];
+        const auth = betterAuth({
+            secret: "a-better-auth-secret-that-is-at-least-32-chars",
+            baseURL: config.baseURL,
+            ...(config.basePath !== undefined ? { basePath: config.basePath } : {}),
+            database: memoryAdapter(db),
+            plugins: [
+                otplink({
+                    secret: SECRET,
+                    baseUrl: BASE_URL,
+                    minimumStartDurationMs: 0,
+                    mailer: async (message) => {
+                        sent.push(message.text);
+                    },
+                }),
+            ],
+        });
+
+        await auth.api.signInOtplink({
+            body: { email: "person@example.com" },
+            headers: new Headers(),
+        });
+
+        const link = /https?:\/\/[^\s]+/.exec(sent[0] ?? "")?.[0];
+        assert.ok(link, "the email carried no link");
+        const page = await auth.handler(new Request(link, { method: "GET" }));
+        assert.equal(page.status, 200, "the emailed link must reach the confirmation page");
+
+        // The page has to post back to itself, or the link arm dead-ends.
+        const action = /action="([^"]+)"/.exec(await page.text())?.[1];
+        return { path: new URL(link).pathname, action };
+    };
+
+    assert.deepEqual(await mount({ baseURL: "https://example.com" }), {
+        path: "/api/auth/otplink/verify",
+        action: "https://example.com/api/auth/otplink/verify",
+    });
+
+    assert.deepEqual(await mount({ baseURL: "https://example.com", basePath: "/auth" }), {
+        path: "/auth/otplink/verify",
+        action: "https://example.com/auth/otplink/verify",
+    });
+
+    // baseURL already carrying the path must not double it.
+    assert.deepEqual(await mount({ baseURL: "https://example.com/api/auth" }), {
+        path: "/api/auth/otplink/verify",
+        action: "https://example.com/api/auth/otplink/verify",
+    });
 });
