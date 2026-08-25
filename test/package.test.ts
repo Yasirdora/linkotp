@@ -136,7 +136,10 @@ test("the published package declares no runtime dependencies", () => {
         devDependencies?: Record<string, string>;
     };
 
-    assert.deepEqual(pkg.dependencies ?? {}, {}, "otplink must stay dependency-free");
+    // Asserted as present-and-empty, not merely absent: `npm install` strips
+    // an empty `dependencies` object, and the field is a deliberate statement
+    // that the emptiness is intended rather than incidental.
+    assert.deepEqual(pkg.dependencies, {}, "otplink must stay dependency-free");
 
     // Every peer must be optional. An optional peer installs nothing for a
     // user who never imports the entry point that needs it, so the
