@@ -17,7 +17,12 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
   [better-auth#6985](https://github.com/better-auth/better-auth/discussions/6985).
 - `createBetterAuthStore` — a `TokenStore` over Better Auth's database adapter,
   so the plugin needs no second database connection. Passes the bundled
-  conformance suite against Better Auth's own adapter.
+  conformance suite twice: on the memory adapter, and on real SQLite through
+  Better Auth's Kysely adapter with the table created by Better Auth's own
+  migrator. The SQL run is what establishes that the guarded `updateMany`
+  compiles to a single `UPDATE` and that a real row lock — not JavaScript's
+  single thread — elects the winner, along with `eq null` compiling to
+  `IS NULL` and `date` columns comparing correctly.
 - `otplinkSchema` — the plugin's table, in Better Auth's schema format, so
   `@better-auth/cli generate` produces the migration.
 - `otplink/better-auth/client` — the client plugin, so `authClient.signIn.otplink`

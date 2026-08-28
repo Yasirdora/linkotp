@@ -322,7 +322,9 @@ const { adapter } = await auth.$context;      // note: $context is a promise
 await createBetterAuthStore({ adapter }).deleteExpired(Date.now());
 ```
 
-**On the store.** The plugin persists challenges through Better Auth's own adapter, so there is no second database connection to configure. Its `Where` clause compares a field to a literal and never to another field, so `attempts < maxAttempts` cannot be expressed; the table stores `attemptsRemaining` and guards `attemptsRemaining > 0` instead. Same meaning, and the guard stays inside a single `updateMany`, which is what keeps `consume` an atomic compare-and-set. The bundled conformance suite runs against it.
+**On the store.** The plugin persists challenges through Better Auth's own adapter, so there is no second database connection to configure. Its `Where` clause compares a field to a literal and never to another field, so `attempts < maxAttempts` cannot be expressed; the table stores `attemptsRemaining` and guards `attemptsRemaining > 0` instead. Same meaning, and the guard stays inside a single `updateMany`, which is what keeps `consume` an atomic compare-and-set.
+
+The bundled conformance suite runs against it twice: once on the memory adapter, and once on real SQLite through Better Auth's Kysely adapter, with the table created by Better Auth's own migrator. The second run is what establishes that the guard actually compiles to one `UPDATE` and that a genuine row lock elects the winner — on the memory adapter that would be JavaScript's single thread doing the work.
 
 > **Note.** Better Auth types `updateMany` as `Promise<number>`. Its first-party adapters honour that as of 1.7; through 1.6.2 the Drizzle adapter returned the raw driver result and the memory adapter returned the updated record. The store reads every documented driver shape and *throws* on one it cannot read, rather than reporting zero rows — an adapter incompatibility should not look like an expired link.
 

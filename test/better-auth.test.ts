@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 
 import { betterAuth } from "better-auth";
+import { getMigrations } from "better-auth/db/migration";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import type { BetterAuthPlugin } from "better-auth/types";
 
@@ -45,7 +47,7 @@ function betterAuthStore() {
     return createBetterAuthStore({ adapter });
 }
 
-test("the Better Auth store satisfies the conformance suite", async () => {
+test("the Better Auth store satisfies the conformance suite (memory adapter)", async () => {
     const report = await checkStoreConformance({ createStore: betterAuthStore });
     assert.ok(report.passed, report.summary);
     // The concurrency check is the one that matters most here: it is what
@@ -581,4 +583,196 @@ test("the emailed link resolves wherever Better Auth is mounted", async () => {
         path: "/api/auth/otplink/verify",
         action: "https://example.com/api/auth/otplink/verify",
     });
+});
+
+
+/**
+ * A Better Auth instance on real SQL, with the plugin's table created by
+ * Better Auth's own migrator.
+ *
+ * `node:sqlite` is a Node builtin and Better Auth accepts a `DatabaseSync`
+ * directly, so this costs no dependency — the same trick the SQL store's own
+ * suite uses.
+ *
+ * The memory adapter proves the store's logic. It cannot prove the claims
+ * that logic *rests* on, because it is a JavaScript object rather than a
+ * database: that `{ operator: "eq", value: null }` compiles to `IS NULL`
+ * rather than `= NULL`, that a `date` column compares correctly against a
+ * `Date`, and above all that the guarded `updateMany` becomes a single
+ * `UPDATE ... WHERE ...` whose affected-row count elects exactly one winner.
+ * Those were read out of adapter source and reasoned about; here they are
+ * executed.
+ */
+async function sqlInstance() {
+    const database = new DatabaseSync(":memory:");
+    const auth = betterAuth({
+        secret: "a-better-auth-secret-that-is-at-least-32-chars",
+        baseURL: "https://example.com",
+        database,
+        plugins: [
+            otplink({
+                secret: SECRET,
+                baseUrl: BASE_URL,
+                minimumStartDurationMs: 0,
+                mailer: async () => {},
+            }),
+        ],
+    });
+
+    // Not hand-written DDL: the table comes from `otplinkSchema` through the
+    // same migrator `@better-auth/cli migrate` runs, so a schema this package
+    // declares but Better Auth cannot migrate fails right here.
+    const { runMigrations, toBeCreated } = await getMigrations(auth.options);
+    await runMigrations();
+
+    const { adapter } = await auth.$context;
+    return { auth, database, adapter, planned: toBeCreated.map((t) => t.table) };
+}
+
+test("the plugin's declared schema migrates to a real database", async () => {
+    const { database, planned } = await sqlInstance();
+    try {
+        assert.ok(planned.includes(DEFAULT_MODEL), "the migrator planned the challenge table");
+
+        const columns = new Map(
+            (
+                database.prepare(`PRAGMA table_info(${DEFAULT_MODEL})`).all() as {
+                    name: string;
+                    notnull: number;
+                }[]
+            ).map((c) => [c.name, c]),
+        );
+
+        for (const required of [
+            "challengeId",
+            "email",
+            "purpose",
+            "codeHash",
+            "tokenHash",
+            "attemptsRemaining",
+            "maxAttempts",
+            "createdAt",
+            "expiresAt",
+        ]) {
+            assert.equal(columns.get(required)?.notnull, 1, `${required} must be NOT NULL`);
+        }
+
+        // Null is what "still live" means, and the consume guard compares
+        // against it. A NOT NULL consumedAt would make every challenge dead.
+        assert.equal(columns.get("consumedAt")?.notnull, 0, "consumedAt must be nullable");
+        assert.equal(columns.get("bindingHash")?.notnull, 0);
+
+        // A token collision must fail loudly at insert rather than silently
+        // overwrite a live challenge, and `affectedRows` treats a returned row
+        // as one row on the strength of challengeId being unique.
+        const uniques = (
+            database.prepare(`PRAGMA index_list(${DEFAULT_MODEL})`).all() as {
+                name: string;
+                unique: number;
+            }[]
+        )
+            .filter((i) => i.unique === 1)
+            .flatMap(
+                (i) =>
+                    (
+                        database.prepare(`PRAGMA index_info(${i.name})`).all() as {
+                            name: string;
+                        }[]
+                    ).map((c) => c.name),
+            );
+
+        assert.ok(uniques.includes("tokenHash"), "tokenHash must be UNIQUE in the database");
+        assert.ok(uniques.includes("challengeId"), "challengeId must be UNIQUE in the database");
+    } finally {
+        database.close();
+    }
+});
+
+test("the Better Auth store satisfies the conformance suite (real SQL)", async () => {
+    const { database, adapter } = await sqlInstance();
+    try {
+        const report = await checkStoreConformance({
+            createStore: () => {
+                // A fresh, empty store per check, without re-migrating.
+                database.prepare(`DELETE FROM ${DEFAULT_MODEL}`).run();
+                return createBetterAuthStore({ adapter: adapter as unknown as BetterAuthAdapterLike });
+            },
+        });
+
+        assert.ok(report.passed, report.summary);
+
+        // The concurrency check is the one that matters most: on real SQL it
+        // is the database's row lock electing the winner, not JavaScript's
+        // single thread, which is the only place that claim can be tested.
+        const race = report.results.find((r) => r.name.includes("concurrent"));
+        assert.equal(race?.passed, true, race?.detail);
+    } finally {
+        database.close();
+    }
+});
+
+test("a full sign-in round trip works on real SQL", async () => {
+    const database = new DatabaseSync(":memory:");
+    const sent: string[] = [];
+    const auth = betterAuth({
+        secret: "a-better-auth-secret-that-is-at-least-32-chars",
+        baseURL: "https://example.com",
+        database,
+        plugins: [
+            otplink({
+                secret: SECRET,
+                baseUrl: BASE_URL,
+                minimumStartDurationMs: 0,
+                mailer: async (message) => {
+                    sent.push(message.text);
+                },
+            }),
+        ],
+    });
+
+    try {
+        await (await getMigrations(auth.options)).runMigrations();
+
+        await auth.api.signInOtplink({
+            body: { email: "person@example.com" },
+            headers: new Headers(),
+        });
+
+        const link = /https?:\/\/[^\s]+/.exec(sent[0] ?? "")?.[0];
+        assert.ok(link);
+        const token = new URL(link).searchParams.get("token")!;
+
+        const scan = await auth.handler(new Request(link, { method: "GET" }));
+        assert.equal(scan.status, 200);
+        assert.equal(scan.headers.get("set-cookie"), null);
+
+        const redeem = () =>
+            auth.handler(
+                new Request("https://example.com/api/auth/otplink/verify", {
+                    method: "POST",
+                    headers: {
+                        "content-type": "application/x-www-form-urlencoded",
+                        origin: "https://example.com",
+                    },
+                    body: new URLSearchParams({ token }),
+                }),
+            );
+
+        const first = await redeem();
+        assert.equal(first.status, 302);
+        assert.match(first.headers.get("set-cookie") ?? "", /session_token=/);
+
+        const sessions = database.prepare("SELECT COUNT(*) AS n FROM session").get() as {
+            n: number;
+        };
+        assert.equal(sessions.n, 1);
+
+        // Single-use, enforced by the database this time.
+        const replay = await redeem();
+        assert.equal(replay.headers.get("location"), "https://example.com/?error=invalid_token");
+        const after = database.prepare("SELECT COUNT(*) AS n FROM session").get() as { n: number };
+        assert.equal(after.n, 1, "the replay created no second session");
+    } finally {
+        database.close();
+    }
 });
