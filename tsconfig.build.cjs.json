@@ -8,5 +8,11 @@
     "declarationMap": false,
     "verbatimModuleSyntax": false
   },
-  "include": ["src", "types"]
+  "include": [
+    "src",
+    "types"
+  ],
+  "exclude": [
+    "src/better-auth"
+  ]
 }

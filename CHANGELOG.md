@@ -9,6 +9,61 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-31
+
+### Added
+
+- `otplink/better-auth` — a Better Auth plugin. `GET /otplink/verify` renders a
+  confirmation page and consumes nothing; only the `POST` it submits redeems
+  the token, so mail security scanners cannot spend the credential. Addresses
+  [better-auth#6985](https://github.com/better-auth/better-auth/discussions/6985).
+- `createBetterAuthStore` — a `TokenStore` over Better Auth's database adapter,
+  so the plugin needs no second database connection. Passes the bundled
+  conformance suite twice: on the memory adapter, and on real SQLite through
+  Better Auth's Kysely adapter with the table created by Better Auth's own
+  migrator. The SQL run is what establishes that the guarded `updateMany`
+  compiles to a single `UPDATE` and that a real row lock — not JavaScript's
+  single thread — elects the winner, along with `eq null` compiling to
+  `IS NULL` and `date` columns comparing correctly.
+- `otplinkSchema` — the plugin's table, in Better Auth's schema format, so
+  `@better-auth/cli generate` produces the migration.
+- `otplink/better-auth/client` — the client plugin, so `authClient.signIn.otplink`
+  exists and is typed by inference from the server half. It imports the server
+  plugin as a type only, so nothing but a dependency-free constants module
+  reaches the browser bundle.
+- The link flow redirects to `errorCallbackURL` with `?error=<code>` when a
+  challenge has expired, been redeemed, or run out of attempts. Those are the
+  ordinary end of a challenge's life and the person clicking is in a browser,
+  so a JSON error body was the wrong answer.
+
+### Changed
+
+- `better-auth` is declared as an **optional** peer dependency, `>=1.7.0`.
+  `dependencies` stays empty, and the peer installs nothing for anyone who does
+  not import `otplink/better-auth`. CI now asserts that every peer is optional
+  rather than that there are none. The floor is 1.7 because that release
+  renamed `getIp` to `getIP` and added a required provisioning-source argument
+  to `internalAdapter.createUser`.
+
+### Notes
+
+- Better Auth's `Where` clause compares a field to a literal and never to
+  another field, so the guard `attempts < maxAttempts` is inexpressible through
+  it. The plugin's table stores `attemptsRemaining` and guards
+  `attemptsRemaining > 0`, which is equivalent and keeps `consume` a single
+  atomic compare-and-set.
+- Better Auth types `updateMany` as `Promise<number>`. Its first-party adapters
+  honour that as of 1.7; through 1.6.2 the Drizzle adapter returned the raw
+  driver result object and the memory adapter returned the updated record.
+  The store reads every documented driver shape — including mysql2's
+  single-element `[ResultSetHeader]` tuple and postgres-js's Array subclass,
+  both of which are misread by a naive `Array.length` — and throws on a shape
+  it cannot read rather than reporting zero, so an adapter incompatibility
+  cannot masquerade as an expired link.
+- New-user provisioning reports `method: "magic-link"` or `"email-otp"`
+  according to which arm the user actually redeemed, so an application's
+  `validateUserInfo` gate sees a method it recognizes.
+
 ## [0.1.0]
 
 Initial release.

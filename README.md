@@ -2,7 +2,7 @@
 
 **One email, two ways in.** A passwordless auth primitive that issues a typed code *and* a scanner-safe magic link as a single challenge, delivered in one message.
 
-- **Zero runtime dependencies.** Web Standard APIs only.
+- **Zero runtime dependencies.** Web Standard APIs only. (`otplink/better-auth` declares Better Auth as an *optional* peer, so it installs nothing unless you import it.)
 - **Runs anywhere.** Node, Bun, Deno, Cloudflare Workers, Vercel Edge.
 - **No framework opinion.** Next.js, SvelteKit, Remix, Astro, Hono, Express, or your own routes.
 - **No database opinion.** Postgres, SQLite, D1, Turso, MySQL, or six methods of your own.
@@ -254,6 +254,86 @@ Seventeen checks, including firing 24 concurrent `consume` calls at one challeng
 
 ---
 
+## Better Auth
+
+```bash
+npm install otplink better-auth
+```
+
+```ts
+import { betterAuth } from "better-auth";
+import { otplink } from "otplink/better-auth";
+
+export const auth = betterAuth({
+  database: db,
+  plugins: [
+    otplink({
+      secret: process.env.OTPLINK_SECRET!,   // 32+ chars, from the environment
+      baseUrl: "https://example.com",
+      mailer: async (message) => { await send(message); },
+    }),
+  ],
+});
+```
+
+Then `npx @better-auth/cli generate` to create the challenge table, and `migrate` to apply it.
+
+On the client:
+
+```ts
+import { createAuthClient } from "better-auth/client";
+import { otplinkClient } from "otplink/better-auth/client";
+
+export const authClient = createAuthClient({ plugins: [otplinkClient()] });
+
+await authClient.signIn.otplink({ email });            // sends the email
+await authClient.signIn.otplink.code({ email, code }); // redeems the typed code
+```
+
+The link arm needs no client call — the user clicks it and lands back on your app with a session. Method names, argument types, and return types are all inferred from the server plugin, so there is nothing to keep in sync.
+
+| Endpoint | Method | What it does |
+|---|---|---|
+| `/sign-in/otplink` | `POST` | Issues one challenge and mails the code and the link |
+| `/sign-in/otplink/code` | `POST` | Redeems the typed code |
+| `/otplink/verify` | `GET` | Renders the confirmation page. **Consumes nothing.** |
+| `/otplink/verify` | `POST` | Redeems the link token |
+
+The `GET`/`POST` split is the point. Better Auth's built-in `magicLink` redeems on `GET`, which is why [discussion #6985](https://github.com/better-auth/better-auth/discussions/6985) is open: Defender Safe Links, Proofpoint, Mimecast, and Barracuda fetch every URL in inbound mail, so the scanner spends the credential and the user is told their brand-new link expired. The usual workaround — raising `allowedAttempts` — turns a single-use credential into a multi-use one, which is a downgrade dressed as a fix. Here the scanner gets HTML and the token survives; and because the same email carries a code on a *separate* secret, a user whose link is mangled entirely still has a way in.
+
+Sessions stay Better Auth's. otplink verifies control of an address and hands off to `internalAdapter` and `setSessionCookie`.
+
+A link that has expired, been redeemed, or been retired by too many wrong guesses is the ordinary end of a challenge's life, and the person clicking it is in a browser. Those all redirect to `errorCallbackURL` with `?error=<code>` rather than rendering a JSON error body:
+
+```ts
+otplink({
+  // ...
+  defaultCallbackURL: "/dashboard",
+  errorCallbackURL: "/sign-in",   // receives ?error=invalid_token
+});
+```
+
+Expired rows are inert — the `consume` guard enforces expiry regardless — but they do accumulate. Better Auth has no scheduler, so call `sweep()` from your own cron if table size matters:
+
+```ts
+import { createBetterAuthStore } from "otplink/better-auth";
+
+const { adapter } = await auth.$context;      // note: $context is a promise
+await createBetterAuthStore({ adapter }).deleteExpired(Date.now());
+```
+
+**On the store.** The plugin persists challenges through Better Auth's own adapter, so there is no second database connection to configure. Its `Where` clause compares a field to a literal and never to another field, so `attempts < maxAttempts` cannot be expressed; the table stores `attemptsRemaining` and guards `attemptsRemaining > 0` instead. Same meaning, and the guard stays inside a single `updateMany`, which is what keeps `consume` an atomic compare-and-set.
+
+The bundled conformance suite runs against it twice: once on the memory adapter, and once on real SQLite through Better Auth's Kysely adapter, with the table created by Better Auth's own migrator. The second run is what establishes that the guard actually compiles to one `UPDATE` and that a genuine row lock elects the winner — on the memory adapter that would be JavaScript's single thread doing the work.
+
+> **Note.** Better Auth types `updateMany` as `Promise<number>`. Its first-party adapters honour that as of 1.7; through 1.6.2 the Drizzle adapter returned the raw driver result and the memory adapter returned the updated record. The store reads every documented driver shape and *throws* on one it cannot read, rather than reporting zero rows — an adapter incompatibility should not look like an expired link.
+
+Requires `better-auth@>=1.7.0`, and this entry point is ESM-only, because Better Auth is.
+
+**Not yet supported here:** device binding (`binding.enabled`), which needs a cookie this entry point does not yet set — the plugin refuses to start rather than ignore it, so nobody deploys believing they have it. `otplink/http` implements it. The plugin also covers sign-in only; email verification and password reset are `purpose`s the core supports but the plugin does not expose.
+
+---
+
 ## Security model
 
 | Property | How |
@@ -344,12 +424,12 @@ Expired, already-used, and never-existed all collapse into one error on purpose 
 ## Development
 
 ```bash
-npm install     # one devDependency: typescript
+npm install     # typescript, plus better-auth to type and test the plugin against
 npm test        # node:test, no runner needed
 npm run build   # tsc only, dual ESM + CJS
 ```
 
-No bundler, no test framework, no `@types/node`. The SQL suite runs against real SQLite via `node:sqlite`.
+No bundler, no test framework, no `@types/node`. The SQL suite runs against real SQLite via `node:sqlite`, and the Better Auth suite runs against Better Auth's own adapter rather than a hand-written double.
 
 ---
 

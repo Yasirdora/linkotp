@@ -76,6 +76,20 @@ Stated plainly rather than buried.
 
 ---
 
+## The Better Auth plugin
+
+`otplink/better-auth` inherits everything above and adds three things worth stating explicitly.
+
+**`GET /otplink/verify` is safe in the RFC 9110 sense.** It renders a confirmation page and consumes nothing. Only the `POST` that page submits redeems the token. This is the property the entry point exists for, and it is covered by a test that issues three scanner-style `GET`s and asserts no session is minted and the token still redeems afterwards.
+
+**Device binding is not supported there.** `binding.enabled` is otherwise a valid otplink option, and wiring it needs a cookie set on the start response and read back on both verify paths, which the plugin does not yet do. Rather than accept the option and quietly issue unbound challenges — leaving a deployment believing it had a protection it did not — the plugin refuses to start. Use `otplink/http` if you need binding.
+
+**An unreadable adapter result fails loudly, not open.** The single-use guarantee depends on reading `updateMany`'s affected-row count, and that value's shape varies by adapter: a number from Kysely, Prisma and Mongo; a driver result object from Drizzle; the updated record from the memory adapter through 1.6.2. The store reads every documented shape, including the two an `Array.length` fallback gets wrong — mysql2's single-element `[ResultSetHeader]` tuple and postgres-js's Array subclass carrying `count` — and throws on a shape it cannot read. Returning zero would present an adapter incompatibility as an expired link, to every user, indefinitely.
+
+Two consequences for your own threat model. The plugin is an *optional peer* on `better-auth`, so you are trusting that package's session handling, cookie flags, and origin checks; otplink's contract ends at proving control of an address. And the challenge table lives in your Better Auth database, so it inherits that database's access controls — a keyed digest keeps the rows inert without the application secret, but the secret and the database should not share a blast radius.
+
+---
+
 ## Deployment checklist
 
 - [ ] `secret` is 32+ random characters from a secrets manager, not source control
@@ -87,3 +101,6 @@ Stated plainly rather than buried.
 - [ ] Session cookies from `onVerified` are `HttpOnly`, `Secure`, `SameSite`
 - [ ] `sweep()` runs periodically to keep the table small (optional; expiry is enforced regardless)
 - [ ] A custom store passes `checkStoreConformance` in your CI
+- [ ] Using the Better Auth plugin: `@better-auth/cli migrate` has been run, and
+      the challenge table carries its `UNIQUE` constraints on `tokenHash` and
+      `challengeId` — the single-use guarantee leans on them

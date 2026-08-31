@@ -20,8 +20,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 22.6 is the floor for running the TypeScript sources directly.
-        node: ["22.6", "22", "24"]
+        # 22.18 is the floor: type stripping runs unflagged from 22.18, and
+        # `node:sqlite` (which the store suites use) from 22.13. On 22.6 the
+        # test script would need --experimental-strip-types AND
+        # --experimental-sqlite, so the matrix would have been red from the
+        # first push.
+        node: ["22.18", "22", "24"]
         os: [ubuntu-latest]
         include:
           - node: "24"
@@ -63,21 +67,33 @@ jobs:
       - run: npm ci
 
       # The headline guarantee, enforced rather than asserted in a README.
+      #
+      # Optional peers are permitted and required ones are not. An optional
+      # peer installs nothing for a user who never imports the entry point
+      # that needs it, so `otplink` and `otplink/stores` stay genuinely
+      # dependency-free while `otplink/better-auth` can import its host.
       - name: Assert the dependency tree is empty
         run: |
           node -e "
             const pkg = require('./package.json');
-            const runtime = { ...pkg.dependencies, ...pkg.peerDependencies };
-            if (Object.keys(runtime).length > 0) {
-              console.error('Runtime dependencies found:', runtime);
+            const deps = Object.keys(pkg.dependencies ?? {});
+            if (deps.length > 0) {
+              console.error('Runtime dependencies found:', deps);
               process.exit(1);
             }
-            const dev = Object.keys(pkg.devDependencies ?? {});
-            if (dev.length !== 1 || dev[0] !== 'typescript') {
+            const required = Object.keys(pkg.peerDependencies ?? {}).filter(
+              (name) => pkg.peerDependenciesMeta?.[name]?.optional !== true
+            );
+            if (required.length > 0) {
+              console.error('Non-optional peer dependencies found:', required);
+              process.exit(1);
+            }
+            const dev = Object.keys(pkg.devDependencies ?? {}).sort().join(',');
+            if (dev !== 'better-auth,typescript') {
               console.error('Unexpected devDependencies:', dev);
               process.exit(1);
             }
-            console.log('Zero runtime dependencies, one devDependency: typescript');
+            console.log('Zero runtime dependencies; optional peers only:', Object.keys(pkg.peerDependencies ?? {}).join(', ') || 'none');
           "
 
       - name: Audit

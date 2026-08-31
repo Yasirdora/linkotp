@@ -6,3 +6,9 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Internal working notes. HANDOFF.md was removed from this repository's history
+# before it was made public: it named unpatched weaknesses in private sibling
+# projects, and a public push publishes history, not just the tip. Kept out by
+# name so it cannot be reintroduced by accident.
+HANDOFF.md

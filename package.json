@@ -1,6 +1,6 @@
 {
   "name": "otplink",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One email, two ways in. A dependency-free, framework-agnostic passwordless auth primitive that sends a typed code and a scanner-safe magic link in a single message.",
   "keywords": [
     "auth",
@@ -56,6 +56,14 @@
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js",
       "require": "./dist/cjs/testing/index.js"
+    },
+    "./better-auth": {
+      "types": "./dist/better-auth/index.d.ts",
+      "import": "./dist/better-auth/index.js"
+    },
+    "./better-auth/client": {
+      "types": "./dist/better-auth/client.d.ts",
+      "import": "./dist/better-auth/client.js"
     }
   },
   "main": "./dist/cjs/index.js",
@@ -73,7 +81,16 @@
     "prepublishOnly": "npm run clean && npm run verify && npm run build"
   },
   "dependencies": {},
+  "peerDependencies": {
+    "better-auth": ">=1.7.0"
+  },
+  "peerDependenciesMeta": {
+    "better-auth": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "better-auth": "1.7.2",
     "typescript": "^5.7.2"
   },
   "publishConfig": {

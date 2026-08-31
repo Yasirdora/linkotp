@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 /**
@@ -15,12 +15,23 @@ import { createRequire } from "node:module";
  */
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Resolves a path in `dist/` to something `import()` will actually accept.
+ *
+ * A bare absolute path works on POSIX and fails on Windows, where the ESM
+ * loader reads the drive letter as a URL scheme and rejects it with
+ * `ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'd:'`. Only CI on
+ * windows-latest catches this, which is the entire argument for having it in
+ * the matrix.
+ */
+const dist = (path: string): string => pathToFileURL(resolve(root, path)).href;
 const built = existsSync(resolve(root, "dist/index.js"));
 
 const requireCjs = createRequire(import.meta.url);
 
 test("the ESM build exposes the documented surface", { skip: !built && "run `npm run build` first" }, async () => {
-    const mod = await import(resolve(root, "dist/index.js"));
+    const mod = await import(dist("dist/index.js"));
 
     for (const name of [
         "createOtpLink",
@@ -41,17 +52,47 @@ test("the ESM build exposes the documented surface", { skip: !built && "run `npm
 });
 
 test("the subpath entries resolve", { skip: !built && "run `npm run build` first" }, async () => {
-    const stores = await import(resolve(root, "dist/stores/index.js"));
+    const stores = await import(dist("dist/stores/index.js"));
     assert.equal(typeof stores.createMemoryStore, "function");
     assert.equal(typeof stores.createSqlStore, "function");
     assert.equal(typeof stores.schemaFor, "function");
 
-    const http = await import(resolve(root, "dist/http/index.js"));
+    const http = await import(dist("dist/http/index.js"));
     assert.equal(typeof http.createHandler, "function");
     assert.equal(typeof http.sanitizeRedirect, "function");
 
-    const testing = await import(resolve(root, "dist/testing/index.js"));
+    const testing = await import(dist("dist/testing/index.js"));
     assert.equal(typeof testing.checkStoreConformance, "function");
+
+    // This one also proves the optional peer resolves at runtime: the module
+    // imports `better-auth/api` and `better-auth/cookies` at load time.
+    const betterAuth = await import(dist("dist/better-auth/index.js"));
+    assert.equal(typeof betterAuth.otplink, "function");
+    assert.equal(typeof betterAuth.createBetterAuthStore, "function");
+    assert.equal(typeof betterAuth.otplinkSchema, "function");
+
+    // The client half must load with *no* better-auth import of its own: it
+    // ships to the browser, and pulling the server plugin in would drag
+    // `better-auth/api` and otplink's protocol core along with it.
+    const client = await import(dist("dist/better-auth/client.js"));
+    assert.equal(typeof client.otplinkClient, "function");
+    assert.equal(client.otplinkClient().id, "otplink");
+});
+
+test("the Better Auth entry is ESM-only, deliberately", () => {
+    const pkg = requireCjs(resolve(root, "package.json")) as {
+        exports: Record<string, Record<string, string>>;
+    };
+
+    // Better Auth is ESM-only — its own package.json publishes no `require`
+    // condition — so a CommonJS consumer cannot use this entry point at all.
+    // Advertising one would resolve fine and then fail at load on every Node
+    // before 22.12, which is a worse error than not offering it. The other
+    // entries stay dual-published because they import nothing.
+    assert.equal(pkg.exports["./better-auth"]!["require"], undefined);
+    assert.equal(pkg.exports["./better-auth/client"]!["require"], undefined);
+    assert.equal(typeof pkg.exports["./better-auth"]!["import"], "string");
+    assert.equal(typeof pkg.exports["."]!["require"], "string");
 });
 
 test("the CommonJS build loads under require()", { skip: !built && "run `npm run build` first" }, () => {
@@ -63,8 +104,8 @@ test("the CommonJS build loads under require()", { skip: !built && "run `npm run
 });
 
 test("the ESM build actually runs end to end", { skip: !built && "run `npm run build` first" }, async () => {
-    const { createOtpLink } = await import(resolve(root, "dist/index.js"));
-    const { createMemoryStore } = await import(resolve(root, "dist/stores/index.js"));
+    const { createOtpLink } = await import(dist("dist/index.js"));
+    const { createMemoryStore } = await import(dist("dist/stores/index.js"));
 
     const sent: Array<{ text: string }> = [];
     const auth = createOtpLink({
@@ -91,6 +132,8 @@ test("declaration files ship alongside every entry point", { skip: !built && "ru
         "dist/stores/index.d.ts",
         "dist/http/index.d.ts",
         "dist/testing/index.d.ts",
+        "dist/better-auth/index.d.ts",
+        "dist/better-auth/client.d.ts",
     ]) {
         assert.ok(existsSync(resolve(root, dts)), `missing ${dts}`);
     }
@@ -100,12 +143,30 @@ test("the published package declares no runtime dependencies", () => {
     const pkg = requireCjs(resolve(root, "package.json")) as {
         dependencies?: Record<string, string>;
         peerDependencies?: Record<string, string>;
+        peerDependenciesMeta?: Record<string, { optional?: boolean }>;
         devDependencies?: Record<string, string>;
     };
 
-    assert.deepEqual(pkg.dependencies ?? {}, {}, "otplink must stay dependency-free");
-    assert.deepEqual(pkg.peerDependencies ?? {}, {}, "no peer dependencies either");
-    // One devDependency, and it is the compiler. Tests use node:test, the
-    // build is plain tsc, and the SQL suite runs on node:sqlite.
-    assert.deepEqual(Object.keys(pkg.devDependencies ?? {}), ["typescript"]);
+    // Asserted as present-and-empty, not merely absent: `npm install` strips
+    // an empty `dependencies` object, and the field is a deliberate statement
+    // that the emptiness is intended rather than incidental.
+    assert.deepEqual(pkg.dependencies, {}, "otplink must stay dependency-free");
+
+    // Every peer must be optional. An optional peer installs nothing for a
+    // user who never imports the entry point that needs it, so the
+    // zero-dependency guarantee survives; a *required* peer would quietly
+    // break it, which is why this asserts the flag rather than the absence.
+    for (const name of Object.keys(pkg.peerDependencies ?? {})) {
+        assert.equal(
+            pkg.peerDependenciesMeta?.[name]?.optional,
+            true,
+            `peer dependency ${name} must be marked optional`,
+        );
+    }
+    assert.deepEqual(Object.keys(pkg.peerDependencies ?? {}), ["better-auth"]);
+
+    // The compiler, plus the optional peer the plugin is typed and tested
+    // against. Tests use node:test, the build is plain tsc, and the SQL suite
+    // runs on node:sqlite.
+    assert.deepEqual(Object.keys(pkg.devDependencies ?? {}).sort(), ["better-auth", "typescript"]);
 });
