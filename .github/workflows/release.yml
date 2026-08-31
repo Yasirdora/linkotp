@@ -11,8 +11,6 @@ name: Release
 # this repository, without trusting the maintainer's machine.
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
