@@ -25,6 +25,7 @@ jobs:
     environment: release
     permissions:
       contents: read
+      packages: write
       # Required to mint the OIDC token that backs provenance.
       id-token: write
 
@@ -73,3 +74,14 @@ jobs:
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Setup Node for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Publish to GitHub Packages
+        run: npm publish --provenance=false
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

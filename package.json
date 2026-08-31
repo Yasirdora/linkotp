@@ -1,5 +1,5 @@
 {
-  "name": "otplink",
+  "name": "@yasirdora/otplink",
   "version": "0.2.0",
   "description": "One email, two ways in. A dependency-free, framework-agnostic passwordless auth primitive that sends a typed code and a scanner-safe magic link in a single message.",
   "keywords": [
