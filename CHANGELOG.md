@@ -9,6 +9,8 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-31
+
 ### Added
 
 - `otplink/better-auth` — a Better Auth plugin. `GET /otplink/verify` renders a
