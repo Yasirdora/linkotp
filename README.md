@@ -9,7 +9,7 @@
 - **Does not mint sessions.** It proves an address; your session library does the rest.
 
 ```bash
-npm install otplink
+npm install @yasirdora/otplink
 ```
 
 ---
@@ -52,8 +52,8 @@ otplink's `GET` renders a confirmation page and touches nothing. Only the `POST`
 ## Quick start
 
 ```ts
-import { createOtpLink } from "otplink";
-import { createSqlStore, schemaFor } from "otplink/stores";
+import { createOtpLink } from "@yasirdora/otplink";
+import { createSqlStore, schemaFor } from \"@yasirdora/otplink/stores\";
 
 const auth = createOtpLink({
   secret: process.env.OTPLINK_SECRET!,   // 32+ chars, from the environment
@@ -99,7 +99,7 @@ node -e "console.log(crypto.randomBytes(32).toString('base64url'))"
 `createHandler` returns one `(Request) => Promise<Response>` built on the Fetch API, with the `GET`/`POST` split, the CSP nonce, and the security headers already correct.
 
 ```ts
-import { createHandler } from "otplink/http";
+import { createHandler } from \"@yasirdora/otplink/http\";
 
 export const handler = createHandler(auth, {
   async onVerified(identity, request) {
@@ -209,7 +209,7 @@ Or skip the handler entirely and call `start` / `verifyCode` / `verifyToken` fro
 ## Stores
 
 ```ts
-import { createMemoryStore, createSqlStore, schemaFor } from "otplink/stores";
+import { createMemoryStore, createSqlStore, schemaFor } from \"@yasirdora/otplink/stores\";
 ```
 
 `createSqlStore` needs a two-method driver, so any client works:
@@ -244,7 +244,7 @@ RETURNING *
 A read-then-write implementation has a window in which two callers both see the row as unconsumed, and a single-use token authenticates twice. The compiler cannot catch that, so there is a suite that can:
 
 ```ts
-import { checkStoreConformance } from "otplink/testing";
+import { checkStoreConformance } from \"@yasirdora/otplink/testing\";
 
 const report = await checkStoreConformance({ createStore: () => myStore() });
 assert.ok(report.passed, report.summary);
@@ -257,12 +257,12 @@ Seventeen checks, including firing 24 concurrent `consume` calls at one challeng
 ## Better Auth
 
 ```bash
-npm install otplink better-auth
+npm install @yasirdora/otplink better-auth
 ```
 
 ```ts
 import { betterAuth } from "better-auth";
-import { otplink } from "otplink/better-auth";
+import { otplink } from \"@yasirdora/otplink/better-auth\";
 
 export const auth = betterAuth({
   database: db,
@@ -282,7 +282,7 @@ On the client:
 
 ```ts
 import { createAuthClient } from "better-auth/client";
-import { otplinkClient } from "otplink/better-auth/client";
+import { otplinkClient } from \"@yasirdora/otplink/better-auth/client\";
 
 export const authClient = createAuthClient({ plugins: [otplinkClient()] });
 
@@ -316,7 +316,7 @@ otplink({
 Expired rows are inert — the `consume` guard enforces expiry regardless — but they do accumulate. Better Auth has no scheduler, so call `sweep()` from your own cron if table size matters:
 
 ```ts
-import { createBetterAuthStore } from "otplink/better-auth";
+import { createBetterAuthStore } from \"@yasirdora/otplink/better-auth\";
 
 const { adapter } = await auth.$context;      // note: $context is a promise
 await createBetterAuthStore({ adapter }).deleteExpired(Date.now());
@@ -402,7 +402,7 @@ shouldSend: async (email) => Boolean(await db.findUser(email)),
 Every failure throws an `OtpLinkError` with a stable `code`, a suggested `status`, and a `publicMessage` that is safe to show a user.
 
 ```ts
-import { OtpLinkError } from "otplink";
+import { OtpLinkError } from "@yasirdora/otplink";
 
 try {
   await auth.verifyCode({ email, code });
