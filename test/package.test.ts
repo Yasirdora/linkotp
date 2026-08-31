@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 /**
@@ -15,12 +15,23 @@ import { createRequire } from "node:module";
  */
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Resolves a path in `dist/` to something `import()` will actually accept.
+ *
+ * A bare absolute path works on POSIX and fails on Windows, where the ESM
+ * loader reads the drive letter as a URL scheme and rejects it with
+ * `ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'd:'`. Only CI on
+ * windows-latest catches this, which is the entire argument for having it in
+ * the matrix.
+ */
+const dist = (path: string): string => pathToFileURL(resolve(root, path)).href;
 const built = existsSync(resolve(root, "dist/index.js"));
 
 const requireCjs = createRequire(import.meta.url);
 
 test("the ESM build exposes the documented surface", { skip: !built && "run `npm run build` first" }, async () => {
-    const mod = await import(resolve(root, "dist/index.js"));
+    const mod = await import(dist("dist/index.js"));
 
     for (const name of [
         "createOtpLink",
@@ -41,21 +52,21 @@ test("the ESM build exposes the documented surface", { skip: !built && "run `npm
 });
 
 test("the subpath entries resolve", { skip: !built && "run `npm run build` first" }, async () => {
-    const stores = await import(resolve(root, "dist/stores/index.js"));
+    const stores = await import(dist("dist/stores/index.js"));
     assert.equal(typeof stores.createMemoryStore, "function");
     assert.equal(typeof stores.createSqlStore, "function");
     assert.equal(typeof stores.schemaFor, "function");
 
-    const http = await import(resolve(root, "dist/http/index.js"));
+    const http = await import(dist("dist/http/index.js"));
     assert.equal(typeof http.createHandler, "function");
     assert.equal(typeof http.sanitizeRedirect, "function");
 
-    const testing = await import(resolve(root, "dist/testing/index.js"));
+    const testing = await import(dist("dist/testing/index.js"));
     assert.equal(typeof testing.checkStoreConformance, "function");
 
     // This one also proves the optional peer resolves at runtime: the module
     // imports `better-auth/api` and `better-auth/cookies` at load time.
-    const betterAuth = await import(resolve(root, "dist/better-auth/index.js"));
+    const betterAuth = await import(dist("dist/better-auth/index.js"));
     assert.equal(typeof betterAuth.otplink, "function");
     assert.equal(typeof betterAuth.createBetterAuthStore, "function");
     assert.equal(typeof betterAuth.otplinkSchema, "function");
@@ -63,7 +74,7 @@ test("the subpath entries resolve", { skip: !built && "run `npm run build` first
     // The client half must load with *no* better-auth import of its own: it
     // ships to the browser, and pulling the server plugin in would drag
     // `better-auth/api` and otplink's protocol core along with it.
-    const client = await import(resolve(root, "dist/better-auth/client.js"));
+    const client = await import(dist("dist/better-auth/client.js"));
     assert.equal(typeof client.otplinkClient, "function");
     assert.equal(client.otplinkClient().id, "otplink");
 });
@@ -93,8 +104,8 @@ test("the CommonJS build loads under require()", { skip: !built && "run `npm run
 });
 
 test("the ESM build actually runs end to end", { skip: !built && "run `npm run build` first" }, async () => {
-    const { createOtpLink } = await import(resolve(root, "dist/index.js"));
-    const { createMemoryStore } = await import(resolve(root, "dist/stores/index.js"));
+    const { createOtpLink } = await import(dist("dist/index.js"));
+    const { createMemoryStore } = await import(dist("dist/stores/index.js"));
 
     const sent: Array<{ text: string }> = [];
     const auth = createOtpLink({
