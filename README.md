@@ -1,5 +1,10 @@
 # otplink
 
+[![CI](https://github.com/Yasirdora/otplink/actions/workflows/release.yml/badge.svg)](https://github.com/Yasirdora/otplink/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/@yasirdora/otplink.svg?style=flat)](https://www.npmjs.com/package/@yasirdora/otplink)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+
 **One email, two ways in.** A passwordless auth primitive that issues a typed code *and* a scanner-safe magic link as a single challenge, delivered in one message.
 
 - **Zero runtime dependencies.** Web Standard APIs only. (`otplink/better-auth` declares Better Auth as an *optional* peer, so it installs nothing unless you import it.)
