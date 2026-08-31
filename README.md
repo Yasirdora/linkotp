@@ -20,11 +20,14 @@ Sending a code and a link in one email is a well-worn pattern — Slack, Notion,
 
 ### 1. The link must not carry the code
 
-The tempting shortcut is to put the OTP in the URL:
+The tempting shortcut is to put the OTP in the URL, either plainly or "hidden" in base64:
 
 ```
 https://example.com/auth/verify?code=418207&email=you@example.com   ❌
+https://example.com/auth/verify?payload=eyJjb2RlIjoiNDE4MjA3In0=    ❌
 ```
+
+*(Note: Base64 is an encoding, not encryption. Anyone who intercepts the second link can trivially decode it to find the code).*
 
 Now the link is only as strong as the code. Six digits is about **20 bits** — perfectly safe for a value typed into a rate-limited form, and far too weak for a bearer credential that lands in browser history, server access logs, CDN logs, and `Referer` headers. Those are two different threat models, and one secret cannot serve both.
 
