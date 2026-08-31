@@ -5,7 +5,7 @@
  * — the vendor-neutral interface, not Zod specifically. Zod is simply what
  * Better Auth's own plugins happen to pass. Implementing the interface
  * directly means the plugin gets real 400-level validation, OpenAPI
- * generation, and client-side type inference without otplink taking on a
+ * generation, and client-side type inference without linkotp taking on a
  * validation dependency it has spent its whole existence avoiding.
  *
  * The interface is small enough to implement correctly in one file: a
@@ -123,7 +123,7 @@ export function object<S extends Shape>(shape: S): StandardSchema<Infer<S>> {
     return {
         "~standard": {
             version: 1,
-            vendor: "otplink",
+            vendor: "linkotp",
             validate(input: unknown): StandardResult<Infer<S>> {
                 if (typeof input !== "object" || input === null || Array.isArray(input)) {
                     return { issues: [{ message: "expected an object body" }] };

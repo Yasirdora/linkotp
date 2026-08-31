@@ -39,13 +39,13 @@ function define<const T extends Record<string, string>>(codes: T): Defined<T> {
     ) as Defined<T>;
 }
 
-export const OTPLINK_ERROR_CODES = define({
-    OTPLINK_INVALID_EMAIL: "Enter a valid email address.",
-    OTPLINK_RATE_LIMITED: "Too many attempts. Please wait a moment and try again.",
-    OTPLINK_INVALID_CODE: "That code is incorrect or has expired.",
-    OTPLINK_TOO_MANY_ATTEMPTS: "Too many incorrect attempts. Request a new code.",
-    OTPLINK_INVALID_TOKEN: "That link is no longer valid. Request a new one.",
-    OTPLINK_BINDING_MISMATCH: "Open the link in the same browser you started from.",
-    OTPLINK_DELIVERY_FAILED: "We couldn't send that email. Please try again.",
-    OTPLINK_SIGNUP_DISABLED: "That address does not have an account.",
+export const LINKOTP_ERROR_CODES = define({
+    LINKOTP_INVALID_EMAIL: "Enter a valid email address.",
+    LINKOTP_RATE_LIMITED: "Too many attempts. Please wait a moment and try again.",
+    LINKOTP_INVALID_CODE: "That code is incorrect or has expired.",
+    LINKOTP_TOO_MANY_ATTEMPTS: "Too many incorrect attempts. Request a new code.",
+    LINKOTP_INVALID_TOKEN: "That link is no longer valid. Request a new one.",
+    LINKOTP_BINDING_MISMATCH: "Open the link in the same browser you started from.",
+    LINKOTP_DELIVERY_FAILED: "We couldn't send that email. Please try again.",
+    LINKOTP_SIGNUP_DISABLED: "That address does not have an account.",
 });

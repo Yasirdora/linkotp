@@ -9,14 +9,14 @@
  * not fix it. It converts a single-use credential into a multi-use one, which
  * is a downgrade dressed as a fix.
  *
- * This plugin does it the other way round. `GET /otplink/verify` renders a
+ * This plugin does it the other way round. `GET /linkotp/verify` renders a
  * confirmation page and touches nothing; only the `POST` that page submits
  * redeems the token. Automated fetchers issue `GET` and stop there, so the
  * credential survives the scan. And because every email also carries a typed
  * code on a *separate* secret, a user whose link is mangled entirely still
  * has a way in.
  *
- * Sessions stay Better Auth's: otplink verifies control of an address and
+ * Sessions stay Better Auth's: linkotp verifies control of an address and
  * hands off to `internalAdapter` and `setSessionCookie` for everything after
  * that.
  */
@@ -24,23 +24,23 @@
 import { APIError, createAuthEndpoint, getIP, isAPIError, originCheck } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 
-import type { OtpLinkOptions } from "../config.ts";
-import { createOtpLink, type OtpLink } from "../core.ts";
-import { OtpLinkError, type OtpLinkErrorCode } from "../errors.ts";
+import type { LinkOtpOptions } from "../config.ts";
+import { createLinkOtp, type LinkOtp } from "../core.ts";
+import { LinkOtpError, type LinkOtpErrorCode } from "../errors.ts";
 import { createNonce, renderInterstitial, securityHeaders } from "../http/interstitial.ts";
 import type { TokenStore, VerifiedIdentity } from "../types.ts";
-import { OTPLINK_ERROR_CODES } from "./error-codes.ts";
-import { otplinkSchema } from "./schema.ts";
+import { LINKOTP_ERROR_CODES } from "./error-codes.ts";
+import { linkotpSchema } from "./schema.ts";
 import { createBetterAuthStore, DEFAULT_MODEL, type BetterAuthAdapterLike } from "./store.ts";
 import { object, optional, record, string } from "./validate.ts";
 
 /** Context shape `setSessionCookie` expects, derived rather than imported. */
 type SessionContext = Parameters<typeof setSessionCookie>[0];
 
-export interface OtplinkPluginOptions extends Omit<OtpLinkOptions, "store"> {
+export interface OtplinkPluginOptions extends Omit<LinkOtpOptions, "store"> {
     /**
-     * Model name for the challenge table. Must match {@link otplinkSchema}.
-     * @default "otplinkChallenge"
+     * Model name for the challenge table. Must match {@link linkotpSchema}.
+     * @default "linkotpChallenge"
      */
     readonly model?: string;
 
@@ -59,7 +59,7 @@ export interface OtplinkPluginOptions extends Omit<OtpLinkOptions, "store"> {
      * Reject addresses with no existing account instead of creating one.
      *
      * Note this is observable: a caller learns whether an address has an
-     * account from the verify response. Use otplink's own `shouldSend` to
+     * account from the verify response. Use linkotp's own `shouldSend` to
      * suppress delivery silently at `start` time if enumeration matters.
      *
      * @default false
@@ -88,7 +88,7 @@ export interface OtplinkPluginOptions extends Omit<OtpLinkOptions, "store"> {
 
 /** Maps the protocol's error taxonomy onto Better Auth's HTTP errors. */
 const STATUS: Record<
-    OtpLinkErrorCode,
+    LinkOtpErrorCode,
     "BAD_REQUEST" | "TOO_MANY_REQUESTS" | "BAD_GATEWAY" | "INTERNAL_SERVER_ERROR"
 > = {
     invalid_email: "BAD_REQUEST",
@@ -102,16 +102,16 @@ const STATUS: Record<
     configuration_error: "INTERNAL_SERVER_ERROR",
 };
 
-const CODE_NAMES: Record<OtpLinkErrorCode, string> = {
-    invalid_email: "OTPLINK_INVALID_EMAIL",
-    rate_limited: "OTPLINK_RATE_LIMITED",
-    invalid_challenge: "OTPLINK_INVALID_TOKEN",
-    invalid_code: "OTPLINK_INVALID_CODE",
-    too_many_attempts: "OTPLINK_TOO_MANY_ATTEMPTS",
-    invalid_token: "OTPLINK_INVALID_TOKEN",
-    binding_mismatch: "OTPLINK_BINDING_MISMATCH",
-    delivery_failed: "OTPLINK_DELIVERY_FAILED",
-    configuration_error: "OTPLINK_DELIVERY_FAILED",
+const CODE_NAMES: Record<LinkOtpErrorCode, string> = {
+    invalid_email: "LINKOTP_INVALID_EMAIL",
+    rate_limited: "LINKOTP_RATE_LIMITED",
+    invalid_challenge: "LINKOTP_INVALID_TOKEN",
+    invalid_code: "LINKOTP_INVALID_CODE",
+    too_many_attempts: "LINKOTP_TOO_MANY_ATTEMPTS",
+    invalid_token: "LINKOTP_INVALID_TOKEN",
+    binding_mismatch: "LINKOTP_BINDING_MISMATCH",
+    delivery_failed: "LINKOTP_DELIVERY_FAILED",
+    configuration_error: "LINKOTP_DELIVERY_FAILED",
 };
 
 /**
@@ -123,7 +123,7 @@ const CODE_NAMES: Record<OtpLinkErrorCode, string> = {
  * whether it was ever valid.
  */
 function toApiError(error: unknown): never {
-    if (!OtpLinkError.is(error)) throw error;
+    if (!LinkOtpError.is(error)) throw error;
 
     const headers =
         error.retryAfter !== undefined ? { "Retry-After": String(error.retryAfter) } : undefined;
@@ -144,12 +144,12 @@ function toApiError(error: unknown): never {
 
 /** A store that exists only to satisfy eager config validation. */
 const UNUSABLE_STORE: TokenStore = {
-    insert: () => Promise.reject(new Error("otplink: store not bound")),
-    consume: () => Promise.reject(new Error("otplink: store not bound")),
-    registerFailedAttempt: () => Promise.reject(new Error("otplink: store not bound")),
-    delete: () => Promise.reject(new Error("otplink: store not bound")),
-    countIssuedSince: () => Promise.reject(new Error("otplink: store not bound")),
-    deleteExpired: () => Promise.reject(new Error("otplink: store not bound")),
+    insert: () => Promise.reject(new Error("linkotp: store not bound")),
+    consume: () => Promise.reject(new Error("linkotp: store not bound")),
+    registerFailedAttempt: () => Promise.reject(new Error("linkotp: store not bound")),
+    delete: () => Promise.reject(new Error("linkotp: store not bound")),
+    countIssuedSince: () => Promise.reject(new Error("linkotp: store not bound")),
+    deleteExpired: () => Promise.reject(new Error("linkotp: store not bound")),
 };
 
 const signInBody = object({
@@ -189,7 +189,7 @@ const verifyQuery = object({
     token: string({ description: "The link token", maxLength: 512 }),
 });
 
-export function otplink(options: OtplinkPluginOptions) {
+export function linkotp(options: OtplinkPluginOptions) {
     const model = options.model ?? DEFAULT_MODEL;
     const interstitialMode = options.interstitialMode ?? "auto";
     const defaultCallbackURL = options.defaultCallbackURL ?? "/";
@@ -203,38 +203,38 @@ export function otplink(options: OtplinkPluginOptions) {
     // believe it had a protection it does not have. Refusing to start is the
     // honest answer until it is implemented.
     if (options.binding?.enabled) {
-        throw new OtpLinkError(
+        throw new LinkOtpError(
             "configuration_error",
-            "otplink/better-auth does not support `binding.enabled` yet. Remove the option, " +
-                "or use the framework-agnostic handler from `otplink/http`, which implements " +
+            "linkotp/better-auth does not support `binding.enabled` yet. Remove the option, " +
+                "or use the framework-agnostic handler from `linkotp/http`, which implements " +
                 "device binding with its own cookie.",
         );
     }
 
     // Validate eagerly, at `betterAuth()` time, by building a throwaway
     // instance against a store that cannot be used. The whole point of
-    // otplink validating its options in the constructor is that a weak
+    // linkotp validating its options in the constructor is that a weak
     // secret or an http:// baseUrl fails at startup rather than at 3am on a
     // sign-in path, and binding the real store needs a request-time adapter.
     // Constructing once here preserves the property; the instance is
     // discarded.
-    createOtpLink({ ...options, store: UNUSABLE_STORE });
+    createLinkOtp({ ...options, store: UNUSABLE_STORE });
 
     // Better Auth builds its AuthContext once per `betterAuth()` call and
     // reuses it for every request, so the adapter is effectively a singleton
     // and memoizing on it is safe. The identity check is belt-and-braces for
     // hosts that rebuild the context.
-    let instance: OtpLink | null = null;
+    let instance: LinkOtp | null = null;
     let boundTo: unknown = null;
 
-    /** Resolves the request-scoped otplink instance. */
+    /** Resolves the request-scoped linkotp instance. */
     function resolve(ctx: {
         context: { adapter: unknown; baseURL: string; options: { basePath?: string | undefined } };
-    }): OtpLink {
+    }): LinkOtp {
         const adapter = ctx.context.adapter as BetterAuthAdapterLike;
         if (instance !== null && boundTo === adapter) return instance;
 
-        instance = createOtpLink({
+        instance = createLinkOtp({
             ...options,
             store: createBetterAuthStore({ adapter, model }),
             // The email's link has to resolve to this plugin's endpoint,
@@ -256,7 +256,7 @@ export function otplink(options: OtplinkPluginOptions) {
         // it plainly does not, which mirrors how Better Auth's own plugins
         // reconstruct their URLs.
         const basePath = pathname ? "" : (ctx.context.options.basePath ?? "");
-        return `${pathname}${basePath}/otplink/verify`;
+        return `${pathname}${basePath}/linkotp/verify`;
     }
 
     function verifyEndpointUrl(ctx: {
@@ -290,10 +290,10 @@ export function otplink(options: OtplinkPluginOptions) {
     }
 
     /**
-     * Derives otplink's per-caller rate-limit dimension, conventionally the IP.
+     * Derives linkotp's per-caller rate-limit dimension, conventionally the IP.
      *
      * Returned as a spreadable fragment so an unresolvable client is *absent*
-     * rather than empty. The distinction matters: otplink skips throttling
+     * rather than empty. The distinction matters: linkotp skips throttling
      * when the key is `undefined`, but an empty string is a perfectly valid
      * key, and every caller sharing it would collapse them into a single
      * bucket — the first few requests would then rate-limit everyone else.
@@ -314,7 +314,7 @@ export function otplink(options: OtplinkPluginOptions) {
      * Turns a verified address into a Better Auth session.
      *
      * Everything past this point is Better Auth's: user lookup, creation,
-     * session rows, cookie flags, and rotation. otplink's contract ended at
+     * session rows, cookie flags, and rotation. linkotp's contract ended at
      * "this request proved control of this address, just now".
      */
     async function establishSession(
@@ -329,8 +329,8 @@ export function otplink(options: OtplinkPluginOptions) {
         if (!user) {
             if (options.disableSignUp) {
                 throw new APIError("FORBIDDEN", {
-                    message: OTPLINK_ERROR_CODES.OTPLINK_SIGNUP_DISABLED.message,
-                    code: "OTPLINK_SIGNUP_DISABLED",
+                    message: LINKOTP_ERROR_CODES.LINKOTP_SIGNUP_DISABLED.message,
+                    code: "LINKOTP_SIGNUP_DISABLED",
                 });
             }
             const name = identity.metadata?.["name"];
@@ -343,7 +343,7 @@ export function otplink(options: OtplinkPluginOptions) {
                 // Report the arm the user actually redeemed rather than a
                 // label of our own. `ValidateUserInfoMethod` accepts an
                 // arbitrary string, but an application's `validateUserInfo`
-                // gate is written against the known ones, and an otplink
+                // gate is written against the known ones, and an linkotp
                 // challenge genuinely *is* a magic link and a one-time code —
                 // which of the two provisioned this account is the honest and
                 // more useful answer.
@@ -375,15 +375,15 @@ export function otplink(options: OtplinkPluginOptions) {
     const rateLimitMax = options.rateLimit?.max ?? 5;
 
     return {
-        id: "otplink",
-        schema: otplinkSchema({ model }),
-        $ERROR_CODES: OTPLINK_ERROR_CODES,
+        id: "linkotp",
+        schema: linkotpSchema({ model }),
+        $ERROR_CODES: LINKOTP_ERROR_CODES,
         options,
 
         rateLimit: [
             {
                 pathMatcher: (path: string) =>
-                    path.startsWith("/sign-in/otplink") || path.startsWith("/otplink/verify"),
+                    path.startsWith("/sign-in/linkotp") || path.startsWith("/linkotp/verify"),
                 window: rateLimitWindow,
                 max: rateLimitMax,
             },
@@ -397,7 +397,7 @@ export function otplink(options: OtplinkPluginOptions) {
              * business.
              */
             signInOtplink: createAuthEndpoint(
-                "/sign-in/otplink",
+                "/sign-in/linkotp",
                 {
                     method: "POST",
                     body: signInBody,
@@ -459,7 +459,7 @@ export function otplink(options: OtplinkPluginOptions) {
 
             /** Redeems the typed code. */
             verifyOtplinkCode: createAuthEndpoint(
-                "/sign-in/otplink/code",
+                "/sign-in/linkotp/code",
                 {
                     method: "POST",
                     body: verifyCodeBody,
@@ -468,7 +468,7 @@ export function otplink(options: OtplinkPluginOptions) {
                     metadata: {
                         openapi: {
                             operationId: "verifyOtplinkCode",
-                            description: "Redeem the one-time code from an otplink email",
+                            description: "Redeem the one-time code from an linkotp email",
                         },
                     },
                 },
@@ -518,14 +518,14 @@ export function otplink(options: OtplinkPluginOptions) {
              * in inbound mail destroys a conventional magic link. Here they
              * fetch an HTML page, and the token stays live for the human.
              */
-            otplinkVerifyPage: createAuthEndpoint(
-                "/otplink/verify",
+            linkotpVerifyPage: createAuthEndpoint(
+                "/linkotp/verify",
                 {
                     method: "GET",
                     query: verifyQuery,
                     metadata: {
                         openapi: {
-                            operationId: "otplinkConfirmPage",
+                            operationId: "linkotpConfirmPage",
                             description:
                                 "Renders the sign-in confirmation page. Safe: consumes nothing.",
                         },
@@ -552,8 +552,8 @@ export function otplink(options: OtplinkPluginOptions) {
             ),
 
             /** Redeems the link token. Only this consumes it. */
-            otplinkVerify: createAuthEndpoint(
-                "/otplink/verify",
+            linkotpVerify: createAuthEndpoint(
+                "/linkotp/verify",
                 {
                     method: "POST",
                     body: verifyTokenBody,
@@ -577,7 +577,7 @@ export function otplink(options: OtplinkPluginOptions) {
                         ],
                         openapi: {
                             operationId: "verifyOtplinkToken",
-                            description: "Redeem the magic-link token from an otplink email",
+                            description: "Redeem the magic-link token from an linkotp email",
                         },
                     },
                 },
@@ -615,7 +615,7 @@ export function otplink(options: OtplinkPluginOptions) {
                         // code by design: distinguishing them would tell
                         // someone holding a captured token whether it was
                         // ever valid.
-                        if (OtpLinkError.is(error)) fail(error.code);
+                        if (LinkOtpError.is(error)) fail(error.code);
                         throw error;
                     }
 

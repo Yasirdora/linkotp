@@ -13,7 +13,7 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
 
 ### Added
 
-- `otplink/better-auth` — a Better Auth plugin. `GET /otplink/verify` renders a
+- `linkotp/better-auth` — a Better Auth plugin. `GET /linkotp/verify` renders a
   confirmation page and consumes nothing; only the `POST` it submits redeems
   the token, so mail security scanners cannot spend the credential. Addresses
   [better-auth#6985](https://github.com/better-auth/better-auth/discussions/6985).
@@ -25,9 +25,9 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
   compiles to a single `UPDATE` and that a real row lock — not JavaScript's
   single thread — elects the winner, along with `eq null` compiling to
   `IS NULL` and `date` columns comparing correctly.
-- `otplinkSchema` — the plugin's table, in Better Auth's schema format, so
+- `linkotpSchema` — the plugin's table, in Better Auth's schema format, so
   `@better-auth/cli generate` produces the migration.
-- `otplink/better-auth/client` — the client plugin, so `authClient.signIn.otplink`
+- `linkotp/better-auth/client` — the client plugin, so `authClient.signIn.linkotp`
   exists and is typed by inference from the server half. It imports the server
   plugin as a type only, so nothing but a dependency-free constants module
   reaches the browser bundle.
@@ -40,7 +40,7 @@ slot: 0.1.x to 0.2.0 may break, 0.1.0 to 0.1.1 will not.
 
 - `better-auth` is declared as an **optional** peer dependency, `>=1.7.0`.
   `dependencies` stays empty, and the peer installs nothing for anyone who does
-  not import `otplink/better-auth`. CI now asserts that every peer is optional
+  not import `linkotp/better-auth`. CI now asserts that every peer is optional
   rather than that there are none. The floor is 1.7 because that release
   renamed `getIp` to `getIP` and added a required provisioning-source argument
   to `internalAdapter.createUser`.
@@ -70,18 +70,18 @@ Initial release.
 
 ### Added
 
-- `createOtpLink` — issues one challenge carrying two independent secrets, a
+- `createLinkOtp` — issues one challenge carrying two independent secrets, a
   typed code and a link token, delivered in a single message. Redeeming either
   arm retires the other.
 - Keyed digests (HMAC-SHA256) for both secrets, domain-separated, with the code
   digest salted by the address so it cannot be replayed across accounts.
 - Atomic single-use redemption expressed as one guarded compare-and-set.
-- `otplink/http` — a Fetch-API handler whose `GET` verify route consumes
+- `linkotp/http` — a Fetch-API handler whose `GET` verify route consumes
   nothing, so mail scanners and prefetchers cannot burn a link. Ships the CSP
   nonce, security headers, same-origin enforcement, and redirect sanitizing.
-- `otplink/stores` — an in-memory store and a SQL store speaking to any
+- `linkotp/stores` — an in-memory store and a SQL store speaking to any
   database through a two-method driver. SQLite, Postgres, and MySQL dialects.
-- `otplink/testing` — a 17-check store conformance suite, including a
+- `linkotp/testing` — a 17-check store conformance suite, including a
   concurrency check that fails a read-then-write `consume`.
 - Configuration validated at startup: weak secrets, non-https origins, and
   under-entropy tokens are rejected before the first request.
@@ -91,5 +91,5 @@ Initial release.
   challenges already in flight.
 - Responsive, theme-aware default email template with a plain-text alternative.
 
-[Unreleased]: https://github.com/Yasirdora/otplink/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Yasirdora/otplink/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Yasirdora/linkotp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Yasirdora/linkotp/releases/tag/v0.1.0

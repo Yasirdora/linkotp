@@ -1,7 +1,7 @@
 /**
  * Minimal ambient declarations for the Node built-ins used by the test suite.
  *
- * otplink has zero runtime dependencies and exactly one devDependency
+ * linkotp has zero runtime dependencies and exactly one devDependency
  * (`typescript`). Pulling in `@types/node` purely so the tests can import
  * `node:test` would double that count for no benefit to consumers, so the
  * handful of signatures we actually use are declared here instead.

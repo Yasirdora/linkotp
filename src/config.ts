@@ -1,7 +1,7 @@
 /**
  * Option parsing, validation, and defaults.
  *
- * Configuration is validated once, eagerly, at `createOtpLink` time. A
+ * Configuration is validated once, eagerly, at `createLinkOtp` time. A
  * misconfigured deployment fails at startup with an actionable message rather
  * than at 3am on a sign-in path, and several of these checks (secret length,
  * token entropy) are the difference between a sound deployment and a quietly
@@ -9,7 +9,7 @@
  */
 
 import { createHasher, entropyBits, type Hasher } from "./crypto.ts";
-import { OtpLinkError } from "./errors.ts";
+import { LinkOtpError } from "./errors.ts";
 import type { Mailer, Purpose, RateLimiter, TokenStore } from "./types.ts";
 
 /** Ambiguity-free code alphabet: no I, O, 0, or 1 to mistype over the phone. */
@@ -79,7 +79,7 @@ export interface BindingOptions {
     readonly enabled: boolean;
 }
 
-export interface OtpLinkOptions {
+export interface LinkOtpOptions {
     /**
      * Application secret keying every stored digest. At least 32 characters
      * of high entropy, read from the environment, never a literal in source.
@@ -159,13 +159,13 @@ export interface ResolvedConfig {
     readonly bindingEnabled: boolean;
     readonly maxSendsPerAddress: { readonly count: number; readonly windowMs: number };
     readonly rateLimiter: RateLimiter | undefined;
-    readonly shouldSend: OtpLinkOptions["shouldSend"];
+    readonly shouldSend: LinkOtpOptions["shouldSend"];
     readonly minimumStartDurationMs: number;
     readonly clock: () => number;
 }
 
 function fail(message: string): never {
-    throw new OtpLinkError("configuration_error", message);
+    throw new LinkOtpError("configuration_error", message);
 }
 
 function resolveSecretShape(kind: "code" | "token", shape: SecretShape | undefined) {
@@ -199,7 +199,7 @@ function resolveSecretShape(kind: "code" | "token", shape: SecretShape | undefin
     return { length, alphabet };
 }
 
-export function resolveOptions(options: OtpLinkOptions): ResolvedConfig {
+export function resolveOptions(options: LinkOtpOptions): ResolvedConfig {
     if (typeof options?.secret !== "string" || options.secret.length < MIN_SECRET_LENGTH) {
         fail(
             `secret must be a string of at least ${MIN_SECRET_LENGTH} characters. Generate ` +
@@ -222,7 +222,7 @@ export function resolveOptions(options: OtpLinkOptions): ResolvedConfig {
         }
         origin = parsed.origin;
     } catch (error) {
-        if (OtpLinkError.is(error)) throw error;
+        if (LinkOtpError.is(error)) throw error;
         fail(`baseUrl is not a valid absolute URL: ${String(options.baseUrl)}`);
     }
 

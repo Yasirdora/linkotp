@@ -11,8 +11,8 @@
  * both as a catch-all and as individual routes.
  */
 
-import type { OtpLink } from "../core.ts";
-import { OtpLinkError } from "../errors.ts";
+import type { LinkOtp } from "../core.ts";
+import { LinkOtpError } from "../errors.ts";
 import type { VerifiedIdentity } from "../types.ts";
 import { createNonce, renderInterstitial, securityHeaders } from "./interstitial.ts";
 
@@ -31,7 +31,7 @@ export interface HandlerOptions {
     /**
      * Called once an address is proven. This is where you create a session.
      *
-     * otplink does not mint sessions, so whatever you return here is what
+     * linkotp does not mint sessions, so whatever you return here is what
      * actually logs the user in. Set your own cookie, with your own flags,
      * through your own session library.
      */
@@ -47,7 +47,7 @@ export interface HandlerOptions {
     clientKey?(request: Request): string | undefined;
 
     /** Where to send the browser when a link fails. Receives the error code. */
-    failureRedirect?(error: OtpLinkError): string;
+    failureRedirect?(error: LinkOtpError): string;
 
     /** Default post-sign-in destination for the link flow. @default "/" */
     successRedirect?: string;
@@ -61,7 +61,7 @@ export interface HandlerOptions {
      */
     confirmation?: "auto" | "manual";
 
-    /** Name of the device-binding cookie. @default "otplink_binding" */
+    /** Name of the device-binding cookie. @default "linkotp_binding" */
     bindingCookie?: string;
 
     /**
@@ -84,7 +84,7 @@ function json(body: unknown, status = 200, extra: Record<string, string> = {}): 
 }
 
 function errorResponse(error: unknown): Response {
-    if (OtpLinkError.is(error)) {
+    if (LinkOtpError.is(error)) {
         const headers: Record<string, string> = {};
         if (error.retryAfter !== undefined) headers["Retry-After"] = String(error.retryAfter);
         return json(error.toJSON(), error.status, headers);
@@ -186,12 +186,12 @@ export function sanitizeRedirect(raw: unknown, fallback: string): string {
     return raw;
 }
 
-export function createHandler(auth: OtpLink, options: HandlerOptions) {
+export function createHandler(auth: LinkOtp, options: HandlerOptions) {
     const basePath = (options.basePath ?? "/api/auth").replace(/\/+$/, "");
     const verifyPath = auth.config.verifyPath;
     const product = options.product ?? "your account";
     const confirmation = options.confirmation ?? "auto";
-    const bindingCookie = options.bindingCookie ?? "otplink_binding";
+    const bindingCookie = options.bindingCookie ?? "linkotp_binding";
     const successRedirect = options.successRedirect ?? "/";
     const secure = options.secureCookies ?? auth.config.baseUrl.startsWith("https:");
 
@@ -199,7 +199,7 @@ export function createHandler(auth: OtpLink, options: HandlerOptions) {
     const verifyCodePath = `${basePath}/verify`;
 
     const failureRedirect =
-        options.failureRedirect ?? ((error: OtpLinkError) => `/login?error=${error.code}`);
+        options.failureRedirect ?? ((error: LinkOtpError) => `/login?error=${error.code}`);
 
     function bindingCookieHeader(value: string): string {
         return [
@@ -298,7 +298,7 @@ export function createHandler(auth: OtpLink, options: HandlerOptions) {
         if (!isSameOrigin(request, auth.config.baseUrl)) {
             return Response.redirect(
                 new URL(
-                    failureRedirect(new OtpLinkError("invalid_token", "cross-origin")),
+                    failureRedirect(new LinkOtpError("invalid_token", "cross-origin")),
                     auth.config.baseUrl,
                 ),
                 303,
@@ -317,7 +317,7 @@ export function createHandler(auth: OtpLink, options: HandlerOptions) {
                 ...(rateLimitKey !== undefined ? { rateLimitKey } : {}),
             });
         } catch (error) {
-            if (!OtpLinkError.is(error)) throw error;
+            if (!LinkOtpError.is(error)) throw error;
             const headers = new Headers({
                 Location: new URL(failureRedirect(error), auth.config.baseUrl).toString(),
                 "Referrer-Policy": "no-referrer",

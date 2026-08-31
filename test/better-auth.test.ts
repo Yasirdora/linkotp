@@ -14,10 +14,10 @@ import {
     DEFAULT_MODEL,
     type BetterAuthAdapterLike,
 } from "../src/better-auth/store.ts";
-import { otplinkSchema } from "../src/better-auth/schema.ts";
-import { otplink } from "../src/better-auth/plugin.ts";
-import { otplinkClient } from "../src/better-auth/client.ts";
-import { OTPLINK_ERROR_CODES } from "../src/better-auth/error-codes.ts";
+import { linkotpSchema } from "../src/better-auth/schema.ts";
+import { linkotp } from "../src/better-auth/plugin.ts";
+import { linkotpClient } from "../src/better-auth/client.ts";
+import { LINKOTP_ERROR_CODES } from "../src/better-auth/error-codes.ts";
 import { object, optional, record, string } from "../src/better-auth/validate.ts";
 import { SECRET, BASE_URL } from "./helpers.ts";
 
@@ -33,7 +33,7 @@ import { SECRET, BASE_URL } from "./helpers.ts";
  * every other adapter goes through.
  */
 function betterAuthStore() {
-    const plugin = otplink({
+    const plugin = linkotp({
         secret: SECRET,
         baseUrl: BASE_URL,
         mailer: async () => {},
@@ -207,7 +207,7 @@ test("affectedRows reads every driver shape, and refuses to guess", () => {
     assert.equal(affectedRows([]), 0);
 
     // The memory adapter through 1.6.2 handed back the row itself. Recognized
-    // by the column only otplink writes, and sound only because every guarded
+    // by the column only linkotp writes, and sound only because every guarded
     // update in the store targets a unique key.
     assert.equal(affectedRows({ challengeId: "ch_1", email: "a@b.c" }), 1);
     assert.equal(affectedRows(null), 0, "the memory adapter's miss");
@@ -223,7 +223,7 @@ test("affectedRows reads every driver shape, and refuses to guess", () => {
 });
 
 test("the schema declares the constraints the design depends on", () => {
-    const schema = otplinkSchema();
+    const schema = linkotpSchema();
     const fields = schema[DEFAULT_MODEL]!.fields;
 
     // A token collision must fail loudly at insert rather than silently
@@ -237,22 +237,22 @@ test("the schema declares the constraints the design depends on", () => {
     assert.equal(fields["consumedAt"]!["required"], false);
     assert.equal(fields["attemptsRemaining"]!["type"], "number");
 
-    const renamed = otplinkSchema({ model: "auth_otplink" });
-    assert.ok(renamed["auth_otplink"], "the model name is configurable");
+    const renamed = linkotpSchema({ model: "auth_linkotp" });
+    assert.ok(renamed["auth_linkotp"], "the model name is configurable");
 });
 
 test("the plugin exposes the scanner-safe GET and the redeeming POST separately", () => {
-    const plugin = otplink({ secret: SECRET, baseUrl: BASE_URL, mailer: async () => {} });
+    const plugin = linkotp({ secret: SECRET, baseUrl: BASE_URL, mailer: async () => {} });
 
-    assert.equal(plugin.id, "otplink");
+    assert.equal(plugin.id, "linkotp");
 
-    const page = plugin.endpoints.otplinkVerifyPage;
-    const redeem = plugin.endpoints.otplinkVerify;
+    const page = plugin.endpoints.linkotpVerifyPage;
+    const redeem = plugin.endpoints.linkotpVerify;
 
     assert.equal(page.options.method, "GET");
     assert.equal(redeem.options.method, "POST");
-    assert.equal(page.path, "/otplink/verify");
-    assert.equal(redeem.path, "/otplink/verify");
+    assert.equal(page.path, "/linkotp/verify");
+    assert.equal(redeem.path, "/linkotp/verify");
 
     // The GET must not accept a body at all: the whole point is that it is
     // safe in the RFC 9110 sense and redeems nothing. better-call's types
@@ -266,11 +266,11 @@ test("plugin configuration is validated at construction, not on the first reques
     // the core deliberately has, and binding the store lazily could have
     // quietly lost it.
     assert.throws(
-        () => otplink({ secret: "too-short", baseUrl: BASE_URL, mailer: async () => {} }),
+        () => linkotp({ secret: "too-short", baseUrl: BASE_URL, mailer: async () => {} }),
         /secret/i,
     );
     assert.throws(
-        () => otplink({ secret: SECRET, baseUrl: "http://example.com", mailer: async () => {} }),
+        () => linkotp({ secret: SECRET, baseUrl: "http://example.com", mailer: async () => {} }),
         /https/i,
     );
 
@@ -280,7 +280,7 @@ test("plugin configuration is validated at construction, not on the first reques
     // challenge was in fact unbound.
     assert.throws(
         () =>
-            otplink({
+            linkotp({
                 secret: SECRET,
                 baseUrl: BASE_URL,
                 mailer: async () => {},
@@ -289,7 +289,7 @@ test("plugin configuration is validated at construction, not on the first reques
         /binding/i,
     );
     assert.doesNotThrow(() =>
-        otplink({
+        linkotp({
             secret: SECRET,
             baseUrl: BASE_URL,
             mailer: async () => {},
@@ -347,7 +347,7 @@ test("request validators reject junk without pulling in a validation library", a
 /**
  * A complete Better Auth instance with the plugin mounted.
  *
- * Everything above this point tests otplink's own pieces. This tests the
+ * Everything above this point tests linkotp's own pieces. This tests the
  * thing a user actually installs: real routing, real body parsing, real
  * middleware, real session cookies. It is the only level at which a mistake
  * in the *contract* — a rejected content type, a plugin shape Better Auth
@@ -368,7 +368,7 @@ function instance() {
         baseURL: "https://example.com",
         database: memoryAdapter(db),
         plugins: [
-            otplink({
+            linkotp({
                 secret: SECRET,
                 baseUrl: BASE_URL,
                 minimumStartDurationMs: 0,
@@ -412,21 +412,21 @@ test("the plugin satisfies Better Auth's plugin contract", () => {
     // the plain message map it looks like it should be, and nothing else in
     // this file would have caught that — every behavioural test passed while
     // the plugin was not a valid BetterAuthPlugin at all.
-    const plugin: BetterAuthPlugin = otplink({
+    const plugin: BetterAuthPlugin = linkotp({
         secret: SECRET,
         baseUrl: BASE_URL,
         mailer: async () => {},
     });
-    assert.equal(plugin.id, "otplink");
-    assert.equal(OTPLINK_ERROR_CODES.OTPLINK_INVALID_TOKEN.code, "OTPLINK_INVALID_TOKEN");
-    assert.equal(typeof OTPLINK_ERROR_CODES.OTPLINK_INVALID_TOKEN.message, "string");
+    assert.equal(plugin.id, "linkotp");
+    assert.equal(LINKOTP_ERROR_CODES.LINKOTP_INVALID_TOKEN.code, "LINKOTP_INVALID_TOKEN");
+    assert.equal(typeof LINKOTP_ERROR_CODES.LINKOTP_INVALID_TOKEN.message, "string");
 
     // The client half is inferred from the server half, so this is the only
     // place the two are checked against each other.
-    const client = otplinkClient();
-    assert.equal(client.id, "otplink");
-    assert.equal(client.atomListeners[0].matcher("/otplink/verify"), true);
-    assert.equal(client.atomListeners[0].matcher("/sign-in/otplink"), false);
+    const client = linkotpClient();
+    assert.equal(client.id, "linkotp");
+    assert.equal(client.atomListeners[0].matcher("/linkotp/verify"), true);
+    assert.equal(client.atomListeners[0].matcher("/sign-in/linkotp"), false);
 });
 
 test("a scanner cannot spend the link, but the person can", async () => {
@@ -439,7 +439,7 @@ test("a scanner cannot spend the link, but the person can", async () => {
 
     const { link, token } = last();
     // The link has to resolve to where Better Auth is actually mounted.
-    assert.equal(new URL(link).pathname, "/api/auth/otplink/verify");
+    assert.equal(new URL(link).pathname, "/api/auth/linkotp/verify");
 
     // Exactly what Defender Safe Links, Proofpoint, Mimecast and Barracuda
     // do to every URL in inbound mail, before the recipient sees it.
@@ -456,7 +456,7 @@ test("a scanner cannot spend the link, but the person can", async () => {
     // The confirmation page submits a plain HTML form, so this arrives as
     // form-urlencoded. Better Auth's router rejects that with 415 unless the
     // endpoint opts in, which is invisible to every test below this level.
-    const redeem = await post("/otplink/verify", { token });
+    const redeem = await post("/linkotp/verify", { token });
     assert.equal(redeem.status, 302, "the link flow redirects rather than returning JSON");
     assert.match(redeem.headers.get("set-cookie") ?? "", /session_token=/);
     assert.equal(redeem.headers.get("location"), "https://example.com/");
@@ -465,7 +465,7 @@ test("a scanner cannot spend the link, but the person can", async () => {
 
     // The scanner's three fetches did not consume it; this second redemption
     // must, because the first one did.
-    const replay = await post("/otplink/verify", { token });
+    const replay = await post("/linkotp/verify", { token });
     assert.equal(replay.status, 302);
     assert.equal(
         replay.headers.get("location"),
@@ -485,7 +485,7 @@ test("the typed code is a second, independent way in", async () => {
     const { code, token } = last();
 
     const wrong = await auth.handler(
-        new Request("https://example.com/api/auth/sign-in/otplink/code", {
+        new Request("https://example.com/api/auth/sign-in/linkotp/code", {
             method: "POST",
             headers: { "content-type": "application/json", origin: "https://example.com" },
             body: JSON.stringify({ email: "person@example.com", code: "AAAAAA" }),
@@ -495,7 +495,7 @@ test("the typed code is a second, independent way in", async () => {
     assert.equal(rows("session").length, 0);
 
     const right = await auth.handler(
-        new Request("https://example.com/api/auth/sign-in/otplink/code", {
+        new Request("https://example.com/api/auth/sign-in/linkotp/code", {
             method: "POST",
             headers: { "content-type": "application/json", origin: "https://example.com" },
             body: JSON.stringify({ email: "person@example.com", code }),
@@ -508,7 +508,7 @@ test("the typed code is a second, independent way in", async () => {
     // Redeeming either arm retires the other: they are two secrets on one
     // challenge, not two challenges.
     const link = await auth.handler(
-        new Request("https://example.com/api/auth/otplink/verify", {
+        new Request("https://example.com/api/auth/linkotp/verify", {
             method: "POST",
             headers: {
                 "content-type": "application/x-www-form-urlencoded",
@@ -542,7 +542,7 @@ test("the emailed link resolves wherever Better Auth is mounted", async () => {
             ...(config.basePath !== undefined ? { basePath: config.basePath } : {}),
             database: memoryAdapter(db),
             plugins: [
-                otplink({
+                linkotp({
                     secret: SECRET,
                     baseUrl: BASE_URL,
                     minimumStartDurationMs: 0,
@@ -569,19 +569,19 @@ test("the emailed link resolves wherever Better Auth is mounted", async () => {
     };
 
     assert.deepEqual(await mount({ baseURL: "https://example.com" }), {
-        path: "/api/auth/otplink/verify",
-        action: "https://example.com/api/auth/otplink/verify",
+        path: "/api/auth/linkotp/verify",
+        action: "https://example.com/api/auth/linkotp/verify",
     });
 
     assert.deepEqual(await mount({ baseURL: "https://example.com", basePath: "/auth" }), {
-        path: "/auth/otplink/verify",
-        action: "https://example.com/auth/otplink/verify",
+        path: "/auth/linkotp/verify",
+        action: "https://example.com/auth/linkotp/verify",
     });
 
     // baseURL already carrying the path must not double it.
     assert.deepEqual(await mount({ baseURL: "https://example.com/api/auth" }), {
-        path: "/api/auth/otplink/verify",
-        action: "https://example.com/api/auth/otplink/verify",
+        path: "/api/auth/linkotp/verify",
+        action: "https://example.com/api/auth/linkotp/verify",
     });
 });
 
@@ -610,7 +610,7 @@ async function sqlInstance() {
         baseURL: "https://example.com",
         database,
         plugins: [
-            otplink({
+            linkotp({
                 secret: SECRET,
                 baseUrl: BASE_URL,
                 minimumStartDurationMs: 0,
@@ -619,7 +619,7 @@ async function sqlInstance() {
         ],
     });
 
-    // Not hand-written DDL: the table comes from `otplinkSchema` through the
+    // Not hand-written DDL: the table comes from `linkotpSchema` through the
     // same migrator `@better-auth/cli migrate` runs, so a schema this package
     // declares but Better Auth cannot migrate fails right here.
     const { runMigrations, toBeCreated } = await getMigrations(auth.options);
@@ -719,7 +719,7 @@ test("a full sign-in round trip works on real SQL", async () => {
         baseURL: "https://example.com",
         database,
         plugins: [
-            otplink({
+            linkotp({
                 secret: SECRET,
                 baseUrl: BASE_URL,
                 minimumStartDurationMs: 0,
@@ -748,7 +748,7 @@ test("a full sign-in round trip works on real SQL", async () => {
 
         const redeem = () =>
             auth.handler(
-                new Request("https://example.com/api/auth/otplink/verify", {
+                new Request("https://example.com/api/auth/linkotp/verify", {
                     method: "POST",
                     headers: {
                         "content-type": "application/x-www-form-urlencoded",

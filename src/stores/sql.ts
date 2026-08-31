@@ -15,7 +15,7 @@ import type {
     TokenStore,
 } from "../types.ts";
 
-/** Minimal surface otplink needs from a database client. */
+/** Minimal surface linkotp needs from a database client. */
 export interface SqlDriver {
     /** Runs a query and returns every row. */
     all<T extends Record<string, unknown>>(sql: string, params: readonly unknown[]): Promise<T[]>;
@@ -29,7 +29,7 @@ export interface SqlStoreOptions {
     readonly driver: SqlDriver;
     /** @default "sqlite" */
     readonly dialect?: SqlDialect;
-    /** @default "otplink_challenge" */
+    /** @default "linkotp_challenge" */
     readonly table?: string;
 }
 
@@ -104,11 +104,11 @@ interface Query {
 export function createSqlStore(options: SqlStoreOptions): TokenStore {
     const { driver } = options;
     const dialect: SqlDialect = options.dialect ?? "sqlite";
-    const table = options.table ?? "otplink_challenge";
+    const table = options.table ?? "linkotp_challenge";
 
     if (!IDENTIFIER.test(table)) {
         throw new Error(
-            `otplink: table name ${JSON.stringify(table)} is not a valid SQL identifier. ` +
+            `linkotp: table name ${JSON.stringify(table)} is not a valid SQL identifier. ` +
                 "Use letters, digits, and underscores, optionally schema-qualified.",
         );
     }
@@ -320,9 +320,9 @@ export function createSqlStore(options: SqlStoreOptions): TokenStore {
  * The indexes cover the two hot lookups, `token_hash` for the link path and
  * `(email, purpose)` for the code path, plus `expires_at` for sweeping.
  */
-export function schemaFor(dialect: SqlDialect, table = "otplink_challenge"): string {
+export function schemaFor(dialect: SqlDialect, table = "linkotp_challenge"): string {
     if (!IDENTIFIER.test(table)) {
-        throw new Error(`otplink: invalid table name ${JSON.stringify(table)}`);
+        throw new Error(`linkotp: invalid table name ${JSON.stringify(table)}`);
     }
 
     const types =

@@ -1,6 +1,6 @@
 {
-  "name": "@yasirdora/otplink",
-  "version": "0.2.0",
+  "name": "linkotp",
+  "version": "0.1.0",
   "description": "One email, two ways in. A dependency-free, framework-agnostic passwordless auth primitive that sends a typed code and a scanner-safe magic link in a single message.",
   "keywords": [
     "auth",
@@ -18,12 +18,12 @@
   "author": "Ysr",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Yasirdora/otplink.git"
+    "url": "git+https://github.com/Yasirdora/linkotp.git"
   },
   "bugs": {
-    "url": "https://github.com/Yasirdora/otplink/issues"
+    "url": "https://github.com/Yasirdora/linkotp/issues"
   },
-  "homepage": "https://github.com/Yasirdora/otplink#readme",
+  "homepage": "https://github.com/Yasirdora/linkotp#readme",
   "type": "module",
   "sideEffects": false,
   "engines": {

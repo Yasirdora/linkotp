@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createOtpLink } from "../src/core.ts";
+import { createLinkOtp } from "../src/core.ts";
 import { createMemoryStore } from "../src/stores/memory.ts";
 import { createMemoryRateLimiter } from "../src/ratelimit.ts";
 import { expectError, harness, BASE_URL, NOW, SECRET } from "./helpers.ts";
@@ -201,7 +201,7 @@ test("a code issued to one address cannot be redeemed by another", async () => {
 
 test("a failed delivery rolls the challenge back", async () => {
     const store = createMemoryStore();
-    const auth = createOtpLink({
+    const auth = createLinkOtp({
         secret: SECRET,
         baseUrl: BASE_URL,
         store,
@@ -322,7 +322,7 @@ test("a challenge issued under a rotated-out secret still verifies", async () =>
     const sent: string[] = [];
     const old = "previous-secret-that-is-also-32-characters-long";
 
-    const before = createOtpLink({
+    const before = createLinkOtp({
         secret: old,
         baseUrl: BASE_URL,
         store,
@@ -335,7 +335,7 @@ test("a challenge issued under a rotated-out secret still verifies", async () =>
     const token = /token=([A-Za-z0-9]+)/.exec(sent[0]!)![1]!;
 
     // Same store, new secret, old one retained for the rotation window.
-    const after = createOtpLink({
+    const after = createLinkOtp({
         secret: SECRET,
         baseUrl: BASE_URL,
         store,
@@ -353,7 +353,7 @@ test("a challenge is unreadable once its secret leaves the rotation list", async
     const sent: string[] = [];
     const old = "previous-secret-that-is-also-32-characters-long";
 
-    const before = createOtpLink({
+    const before = createLinkOtp({
         secret: old,
         baseUrl: BASE_URL,
         store,
@@ -365,7 +365,7 @@ test("a challenge is unreadable once its secret leaves the rotation list", async
     await before.start({ email: "person@example.com" });
     const token = /token=([A-Za-z0-9]+)/.exec(sent[0]!)![1]!;
 
-    const after = createOtpLink({
+    const after = createLinkOtp({
         secret: SECRET,
         baseUrl: BASE_URL,
         store,

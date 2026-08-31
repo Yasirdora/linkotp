@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Report privately through [GitHub Security Advisories](https://github.com/Yasirdora/otplink/security/advisories/new). Please do not open a public issue for a suspected vulnerability.
+Report privately through [GitHub Security Advisories](https://github.com/Yasirdora/linkotp/security/advisories/new). Please do not open a public issue for a suspected vulnerability.
 
 Expect an acknowledgement within 72 hours and an assessment within seven days. Fixes for confirmed issues ship as a patch release with an advisory; you will be credited unless you prefer otherwise.
 
@@ -12,7 +12,7 @@ Supported: the latest minor release. Pre-1.0, that means the latest release.
 
 ## Threat model
 
-### What otplink defends against
+### What linkotp defends against
 
 **A stolen database.** Neither secret is stored in plaintext. Both are HMAC-SHA256 digests keyed by an application secret held in the environment, not the database. Recovering a six-character code from a plain SHA-256 is minutes of GPU time against a 10⁹ keyspace; without the key, it is not possible at all. This is why `secret` is mandatory and why anything under 32 characters is rejected at startup.
 
@@ -40,7 +40,7 @@ Supported: the latest minor release. Pre-1.0, that means the latest release.
 
 ---
 
-### What otplink does not defend against
+### What linkotp does not defend against
 
 These are real, and they are yours to handle.
 
@@ -50,7 +50,7 @@ These are real, and they are yours to handle.
 
 **Distributed rate limiting.** The bundled `createMemoryRateLimiter` is per-process. Behind a load balancer, the effective limit multiplies by the instance count; on serverless it may do nothing at all. Implement `RateLimiter` over Redis, a Durable Object, or your gateway.
 
-**Session security after verification.** otplink stops at proving an address. Cookie flags, rotation, revocation, fixation, and idle timeout belong to your session library.
+**Session security after verification.** linkotp stops at proving an address. Cookie flags, rotation, revocation, fixation, and idle timeout belong to your session library.
 
 **Bot signups.** `guard` is where a CAPTCHA or reputation check goes. Nothing is wired in by default.
 
@@ -78,15 +78,15 @@ Stated plainly rather than buried.
 
 ## The Better Auth plugin
 
-`otplink/better-auth` inherits everything above and adds three things worth stating explicitly.
+`linkotp/better-auth` inherits everything above and adds three things worth stating explicitly.
 
-**`GET /otplink/verify` is safe in the RFC 9110 sense.** It renders a confirmation page and consumes nothing. Only the `POST` that page submits redeems the token. This is the property the entry point exists for, and it is covered by a test that issues three scanner-style `GET`s and asserts no session is minted and the token still redeems afterwards.
+**`GET /linkotp/verify` is safe in the RFC 9110 sense.** It renders a confirmation page and consumes nothing. Only the `POST` that page submits redeems the token. This is the property the entry point exists for, and it is covered by a test that issues three scanner-style `GET`s and asserts no session is minted and the token still redeems afterwards.
 
-**Device binding is not supported there.** `binding.enabled` is otherwise a valid otplink option, and wiring it needs a cookie set on the start response and read back on both verify paths, which the plugin does not yet do. Rather than accept the option and quietly issue unbound challenges — leaving a deployment believing it had a protection it did not — the plugin refuses to start. Use `otplink/http` if you need binding.
+**Device binding is not supported there.** `binding.enabled` is otherwise a valid linkotp option, and wiring it needs a cookie set on the start response and read back on both verify paths, which the plugin does not yet do. Rather than accept the option and quietly issue unbound challenges — leaving a deployment believing it had a protection it did not — the plugin refuses to start. Use `linkotp/http` if you need binding.
 
 **An unreadable adapter result fails loudly, not open.** The single-use guarantee depends on reading `updateMany`'s affected-row count, and that value's shape varies by adapter: a number from Kysely, Prisma and Mongo; a driver result object from Drizzle; the updated record from the memory adapter through 1.6.2. The store reads every documented shape, including the two an `Array.length` fallback gets wrong — mysql2's single-element `[ResultSetHeader]` tuple and postgres-js's Array subclass carrying `count` — and throws on a shape it cannot read. Returning zero would present an adapter incompatibility as an expired link, to every user, indefinitely.
 
-Two consequences for your own threat model. The plugin is an *optional peer* on `better-auth`, so you are trusting that package's session handling, cookie flags, and origin checks; otplink's contract ends at proving control of an address. And the challenge table lives in your Better Auth database, so it inherits that database's access controls — a keyed digest keeps the rows inert without the application secret, but the secret and the database should not share a blast radius.
+Two consequences for your own threat model. The plugin is an *optional peer* on `better-auth`, so you are trusting that package's session handling, cookie flags, and origin checks; linkotp's contract ends at proving control of an address. And the challenge table lives in your Better Auth database, so it inherits that database's access controls — a keyed digest keeps the rows inert without the application secret, but the secret and the database should not share a blast radius.
 
 ---
 

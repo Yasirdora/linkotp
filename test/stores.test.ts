@@ -197,16 +197,16 @@ test("an invalid table name is rejected rather than interpolated", async () => {
         assert.throws(() => schemaFor("sqlite", table), /invalid table name/);
     }
 
-    assert.doesNotThrow(() => createSqlStore({ driver, table: "auth.otplink_challenge" }));
+    assert.doesNotThrow(() => createSqlStore({ driver, table: "auth.linkotp_challenge" }));
 });
 
 test("the schema constrains token_hash to be unique", () => {
     for (const dialect of ["sqlite", "postgres", "mysql"] as const) {
         const ddl = schemaFor(dialect);
         assert.match(ddl, /token_hash\s+\S+\s+NOT NULL UNIQUE/);
-        assert.ok(ddl.includes("otplink_challenge_token_idx"));
-        assert.ok(ddl.includes("otplink_challenge_lookup_idx"));
-        assert.ok(ddl.includes("otplink_challenge_expiry_idx"));
+        assert.ok(ddl.includes("linkotp_challenge_token_idx"));
+        assert.ok(ddl.includes("linkotp_challenge_lookup_idx"));
+        assert.ok(ddl.includes("linkotp_challenge_expiry_idx"));
     }
 });
 

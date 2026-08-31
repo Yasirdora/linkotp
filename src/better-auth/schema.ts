@@ -1,5 +1,5 @@
 /**
- * The table Better Auth will create and migrate for otplink.
+ * The table Better Auth will create and migrate for linkotp.
  *
  * Declared in Better Auth's plugin schema format, so `better-auth generate`
  * and `better-auth migrate` produce the columns and indexes without the user
@@ -30,7 +30,7 @@ import { DEFAULT_MODEL } from "./store.ts";
 export type PluginSchema = NonNullable<BetterAuthPlugin["schema"]>;
 
 export interface SchemaOptions {
-    /** @default "otplinkChallenge" */
+    /** @default "linkotpChallenge" */
     readonly model?: string;
     /** Physical table name, when it should differ from the model name. */
     readonly modelName?: string;
@@ -38,7 +38,7 @@ export interface SchemaOptions {
     readonly disableMigration?: boolean;
 }
 
-export function otplinkSchema(options: SchemaOptions = {}): PluginSchema {
+export function linkotpSchema(options: SchemaOptions = {}): PluginSchema {
     const model = options.model ?? DEFAULT_MODEL;
 
     return {
@@ -49,7 +49,7 @@ export function otplinkSchema(options: SchemaOptions = {}): PluginSchema {
                 : {}),
             fields: {
                 /**
-                 * otplink's own challenge id, distinct from Better Auth's
+                 * linkotp's own challenge id, distinct from Better Auth's
                  * primary key. Better Auth generates `id` itself and several
                  * adapters require that, so the protocol's identifier lives
                  * in its own unique, indexed column.

@@ -311,7 +311,7 @@ test("device binding survives a full round trip through HTTP", async () => {
     });
 
     const started = await handler(post("/api/auth/start", { email: "person@example.com" }));
-    const cookie = started.headers.getSetCookie().find((c) => c.startsWith("otplink_binding="))!;
+    const cookie = started.headers.getSetCookie().find((c) => c.startsWith("linkotp_binding="))!;
     assert.ok(cookie, "start must set the binding cookie");
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /SameSite=Lax/);
@@ -343,7 +343,7 @@ test("device binding rejects a redemption from a different browser", async () =>
     const token = h.lastToken();
 
     const response = await handler(
-        postForm("/auth/verify", { token }, { cookie: "otplink_binding=someone-elses" }),
+        postForm("/auth/verify", { token }, { cookie: "linkotp_binding=someone-elses" }),
     );
     assert.equal(response.status, 303);
     assert.match(response.headers.get("location") ?? "", /error=binding_mismatch/);

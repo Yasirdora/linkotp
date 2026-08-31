@@ -3,12 +3,12 @@
  *
  * ```ts
  * import { createAuthClient } from "better-auth/client";
- * import { otplinkClient } from "otplink/better-auth/client";
+ * import { linkotpClient } from "linkotp/better-auth/client";
  *
- * export const authClient = createAuthClient({ plugins: [otplinkClient()] });
+ * export const authClient = createAuthClient({ plugins: [linkotpClient()] });
  *
- * await authClient.signIn.otplink({ email });
- * await authClient.signIn.otplink.code({ email, code });
+ * await authClient.signIn.linkotp({ email });
+ * await authClient.signIn.linkotp.code({ email, code });
  * ```
  *
  * Better Auth derives the client methods, their argument types, and their
@@ -18,18 +18,18 @@
  *
  * The import of the server plugin is **type-only**, and deliberately so: a
  * value import would pull `plugin.ts`, and through it `better-auth/api` and
- * otplink's whole protocol core, into the browser bundle. The error codes are
+ * linkotp's whole protocol core, into the browser bundle. The error codes are
  * the one runtime value this module needs, and they live in their own
  * dependency-free module for exactly that reason.
  */
 
-import { OTPLINK_ERROR_CODES } from "./error-codes.ts";
-import type { otplink } from "./plugin.ts";
+import { LINKOTP_ERROR_CODES } from "./error-codes.ts";
+import type { linkotp } from "./plugin.ts";
 
-export function otplinkClient() {
+export function linkotpClient() {
     return {
-        id: "otplink",
-        $InferServerPlugin: {} as ReturnType<typeof otplink>,
+        id: "linkotp",
+        $InferServerPlugin: {} as ReturnType<typeof linkotp>,
 
         /**
          * Refreshes the session atom after either arm redeems, so components
@@ -43,11 +43,11 @@ export function otplinkClient() {
         atomListeners: [
             {
                 matcher: (path: string) =>
-                    path === "/sign-in/otplink/code" || path === "/otplink/verify",
+                    path === "/sign-in/linkotp/code" || path === "/linkotp/verify",
                 signal: "$sessionSignal",
             },
         ],
 
-        $ERROR_CODES: OTPLINK_ERROR_CODES,
+        $ERROR_CODES: LINKOTP_ERROR_CODES,
     } as const;
 }

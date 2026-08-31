@@ -6,15 +6,15 @@
  * built-ins, no polyfills, no dependencies.
  */
 
-import { OtpLinkError } from "./errors.ts";
+import { LinkOtpError } from "./errors.ts";
 
 /** Resolves Web Crypto, failing loudly rather than silently degrading. */
 function webCrypto(): Crypto {
     const subtle = globalThis.crypto?.subtle;
     if (!globalThis.crypto?.getRandomValues || !subtle) {
-        throw new OtpLinkError(
+        throw new LinkOtpError(
             "configuration_error",
-            "Web Crypto is unavailable. otplink requires globalThis.crypto with " +
+            "Web Crypto is unavailable. linkotp requires globalThis.crypto with " +
                 "getRandomValues and subtle — Node 18+, Bun, Deno, Cloudflare " +
                 "Workers, Vercel Edge, or a browser. On Node 16 and below, no " +
                 "supported polyfill exists; upgrade the runtime.",
@@ -37,16 +37,16 @@ function webCrypto(): Crypto {
  */
 export function randomString(length: number, alphabet: string): string {
     if (!Number.isInteger(length) || length <= 0) {
-        throw new OtpLinkError("configuration_error", "length must be a positive integer");
+        throw new LinkOtpError("configuration_error", "length must be a positive integer");
     }
     if (alphabet.length < 2 || alphabet.length > 256) {
-        throw new OtpLinkError(
+        throw new LinkOtpError(
             "configuration_error",
             "alphabet must contain between 2 and 256 characters",
         );
     }
     if (new Set(alphabet).size !== alphabet.length) {
-        throw new OtpLinkError(
+        throw new LinkOtpError(
             "configuration_error",
             "alphabet must not contain duplicate characters — duplicates skew the " +
                 "output distribution and overstate the entropy of generated secrets",
@@ -98,7 +98,7 @@ export interface Hasher {
  * time. Keying the digest with a secret held outside the database means a
  * database compromise alone yields nothing, because the attacker also needs
  * the application secret from the environment. This is the same reasoning
- * behind peppering a password hash, and it is why otplink requires a secret
+ * behind peppering a password hash, and it is why linkotp requires a secret
  * rather than treating one as optional.
  *
  * ## Why a domain separator
@@ -134,7 +134,7 @@ export function createHasher(secret: string): Hasher {
         const signature = await crypto.subtle.sign(
             "HMAC",
             await key(),
-            encoder.encode(`otplink:v1:${domain}:${value}`),
+            encoder.encode(`linkotp:v1:${domain}:${value}`),
         );
         return toHex(new Uint8Array(signature));
     };

@@ -4,7 +4,7 @@
  * The contracts declared here — particularly {@link TokenStore.consume} — are
  * load-bearing for the library's security properties. Read the doc comments
  * before writing a custom adapter, and run the bundled conformance suite
- * (`otplink/testing`) against it.
+ * (`linkotp/testing`) against it.
  */
 
 /** What a challenge is for. Free-form; carried through to the verified result. */
@@ -103,7 +103,7 @@ export interface TokenStore {
      * Express it as one guarded statement. In SQL:
      *
      * ```sql
-     * UPDATE otplink_challenge
+     * UPDATE linkotp_challenge
      *    SET consumed_at = :now
      *  WHERE token_hash  = :tokenHash
      *    AND consumed_at IS NULL
@@ -194,7 +194,7 @@ export interface MailerMessage {
     /** Plain-text alternative. Never omit it — it drives deliverability. */
     readonly text: string;
     /**
-     * Headers otplink recommends setting. `Auto-Submitted` and
+     * Headers linkotp recommends setting. `Auto-Submitted` and
      * `X-Auto-Response-Suppress` stop out-of-office autoresponders from
      * bouncing sign-in mail back at you.
      */
@@ -223,7 +223,7 @@ export interface RateLimitVerdict {
 }
 
 /**
- * Throttling hook. otplink calls this before issuing a challenge and before
+ * Throttling hook. linkotp calls this before issuing a challenge and before
  * verifying one, with a namespaced key. Bring your own — a Redis token
  * bucket, Cloudflare's rate limiting binding, an IP reputation service — or
  * use the bundled in-memory limiter for single-instance deployments.
@@ -232,7 +232,7 @@ export interface RateLimiter {
     check(key: string, now: number): Promise<RateLimitVerdict>;
 }
 
-/** Successful outcome of {@link OtpLink.start}. */
+/** Successful outcome of {@link LinkOtp.start}. */
 export interface StartResult {
     /**
      * Always true on a non-throwing return, including when `shouldSend`
@@ -246,7 +246,7 @@ export interface StartResult {
     readonly codeLength: number;
 }
 
-/** Successful outcome of {@link OtpLink.verifyCode} or {@link OtpLink.verifyToken}. */
+/** Successful outcome of {@link LinkOtp.verifyCode} or {@link LinkOtp.verifyToken}. */
 export interface VerifiedIdentity {
     readonly email: string;
     readonly purpose: Purpose;
