@@ -1,15 +1,15 @@
 /**
- * otplink for Better Auth.
+ * linkotp for Better Auth.
  *
  * ```ts
  * import { betterAuth } from "better-auth";
- * import { otplink } from "otplink/better-auth";
+ * import { linkotp } from "linkotp/better-auth";
  *
  * export const auth = betterAuth({
  *     database: db,
  *     plugins: [
- *         otplink({
- *             secret: process.env.OTPLINK_SECRET!,
+ *         linkotp({
+ *             secret: process.env.LINKOTP_SECRET!,
  *             baseUrl: "https://example.com",
  *             mailer: async (message) => { await send(message); },
  *         }),
@@ -24,10 +24,10 @@
  * all in `dependencies`.
  */
 
-export { otplink } from "./plugin.ts";
+export { linkotp } from "./plugin.ts";
 export type { OtplinkPluginOptions } from "./plugin.ts";
 
-export { OTPLINK_ERROR_CODES } from "./error-codes.ts";
+export { LINKOTP_ERROR_CODES } from "./error-codes.ts";
 export type { OtplinkErrorCode } from "./error-codes.ts";
 
 export { createBetterAuthStore, DEFAULT_MODEL } from "./store.ts";
@@ -37,5 +37,5 @@ export type {
     BetterAuthStoreOptions,
 } from "./store.ts";
 
-export { otplinkSchema } from "./schema.ts";
+export { linkotpSchema } from "./schema.ts";
 export type { PluginSchema, SchemaOptions } from "./schema.ts";

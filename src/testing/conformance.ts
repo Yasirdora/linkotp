@@ -12,7 +12,7 @@
  * script, and adds no dependency to a package that has none.
  *
  * ```ts
- * import { checkStoreConformance } from "otplink/testing";
+ * import { checkStoreConformance } from "linkotp/testing";
  *
  * const report = await checkStoreConformance({ createStore: () => myStore() });
  * assert.ok(report.passed, report.summary);

@@ -45,10 +45,10 @@ export function createMemoryStore(): MemoryStore {
     return {
         async insert(challenge: Challenge): Promise<void> {
             if (byId.has(challenge.id)) {
-                throw new Error(`otplink: duplicate challenge id ${challenge.id}`);
+                throw new Error(`linkotp: duplicate challenge id ${challenge.id}`);
             }
             if (idByToken.has(challenge.tokenHash)) {
-                throw new Error("otplink: duplicate token hash");
+                throw new Error("linkotp: duplicate token hash");
             }
             byId.set(challenge.id, challenge);
             idByToken.set(challenge.tokenHash, challenge.id);

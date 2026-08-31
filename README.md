@@ -1,20 +1,20 @@
-# otplink
+# linkotp
 
-[![CI](https://github.com/Yasirdora/otplink/actions/workflows/release.yml/badge.svg)](https://github.com/Yasirdora/otplink/actions/workflows/release.yml)
-[![npm version](https://img.shields.io/npm/v/@yasirdora/otplink.svg?style=flat)](https://www.npmjs.com/package/@yasirdora/otplink)
+[![CI](https://github.com/Yasirdora/linkotp/actions/workflows/release.yml/badge.svg)](https://github.com/Yasirdora/linkotp/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/@yasirdora/linkotp.svg?style=flat)](https://www.npmjs.com/package/@yasirdora/linkotp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 
 **One email, two ways in.** A passwordless auth primitive that issues a typed code *and* a scanner-safe magic link as a single challenge, delivered in one message.
 
-- **Zero runtime dependencies.** Web Standard APIs only. (`otplink/better-auth` declares Better Auth as an *optional* peer, so it installs nothing unless you import it.)
+- **Zero runtime dependencies.** Web Standard APIs only. (`linkotp/better-auth` declares Better Auth as an *optional* peer, so it installs nothing unless you import it.)
 - **Runs anywhere.** Node, Bun, Deno, Cloudflare Workers, Vercel Edge.
 - **No framework opinion.** Next.js, SvelteKit, Remix, Astro, Hono, Express, or your own routes.
 - **No database opinion.** Postgres, SQLite, D1, Turso, MySQL, or six methods of your own.
 - **Does not mint sessions.** It proves an address; your session library does the rest.
 
 ```bash
-npm install @yasirdora/otplink
+npm install @yasirdora/linkotp
 ```
 
 ---
@@ -36,7 +36,7 @@ https://example.com/auth/verify?payload=eyJjb2RlIjoiNDE4MjA3In0=    ❌
 
 Now the link is only as strong as the code. Six digits is about **20 bits** — perfectly safe for a value typed into a rate-limited form, and far too weak for a bearer credential that lands in browser history, server access logs, CDN logs, and `Referer` headers. Those are two different threat models, and one secret cannot serve both.
 
-otplink issues **two independent secrets** bound to one challenge:
+linkotp issues **two independent secrets** bound to one challenge:
 
 | | Entropy | Where it travels |
 |---|---:|---|
@@ -53,18 +53,18 @@ If `GET` consumes the token, each of those fetches burns a single-use credential
 
 This is also plain HTTP: [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-safe-methods) requires `GET` to be safe, and spending a one-time credential is not.
 
-otplink's `GET` renders a confirmation page and touches nothing. Only the `POST` that page submits consumes the token. Automated fetchers issue `GET` and stop.
+linkotp's `GET` renders a confirmation page and touches nothing. Only the `POST` that page submits consumes the token. Automated fetchers issue `GET` and stop.
 
 ---
 
 ## Quick start
 
 ```ts
-import { createOtpLink } from "@yasirdora/otplink";
-import { createSqlStore, schemaFor } from \"@yasirdora/otplink/stores\";
+import { createLinkOtp } from "@yasirdora/linkotp";
+import { createSqlStore, schemaFor } from \"@yasirdora/linkotp/stores\";
 
-const auth = createOtpLink({
-  secret: process.env.OTPLINK_SECRET!,   // 32+ chars, from the environment
+const auth = createLinkOtp({
+  secret: process.env.LINKOTP_SECRET!,   // 32+ chars, from the environment
   baseUrl: "https://example.com",
   store: createSqlStore({ driver, dialect: "postgres" }),
   mailer: async (message) => {
@@ -107,11 +107,11 @@ node -e "console.log(crypto.randomBytes(32).toString('base64url'))"
 `createHandler` returns one `(Request) => Promise<Response>` built on the Fetch API, with the `GET`/`POST` split, the CSP nonce, and the security headers already correct.
 
 ```ts
-import { createHandler } from \"@yasirdora/otplink/http\";
+import { createHandler } from \"@yasirdora/linkotp/http\";
 
 export const handler = createHandler(auth, {
   async onVerified(identity, request) {
-    // otplink does not create sessions. This is where you do.
+    // linkotp does not create sessions. This is where you do.
     const cookie = await mySessionLibrary.create(identity.email);
     return { headers: { "Set-Cookie": cookie }, redirectTo: "/dashboard" };
   },
@@ -217,7 +217,7 @@ Or skip the handler entirely and call `start` / `verifyCode` / `verifyToken` fro
 ## Stores
 
 ```ts
-import { createMemoryStore, createSqlStore, schemaFor } from \"@yasirdora/otplink/stores\";
+import { createMemoryStore, createSqlStore, schemaFor } from \"@yasirdora/linkotp/stores\";
 ```
 
 `createSqlStore` needs a two-method driver, so any client works:
@@ -240,7 +240,7 @@ Dialects: `sqlite` (default), `postgres`, `mysql`. SQLite and Postgres use `RETU
 The interface is six methods, and one of them carries the entire security model. `consume` **must be a single guarded compare-and-set**:
 
 ```sql
-UPDATE otplink_challenge
+UPDATE linkotp_challenge
    SET consumed_at = :now
  WHERE token_hash  = :tokenHash
    AND consumed_at IS NULL
@@ -252,7 +252,7 @@ RETURNING *
 A read-then-write implementation has a window in which two callers both see the row as unconsumed, and a single-use token authenticates twice. The compiler cannot catch that, so there is a suite that can:
 
 ```ts
-import { checkStoreConformance } from \"@yasirdora/otplink/testing\";
+import { checkStoreConformance } from \"@yasirdora/linkotp/testing\";
 
 const report = await checkStoreConformance({ createStore: () => myStore() });
 assert.ok(report.passed, report.summary);
@@ -265,18 +265,18 @@ Seventeen checks, including firing 24 concurrent `consume` calls at one challeng
 ## Better Auth
 
 ```bash
-npm install @yasirdora/otplink better-auth
+npm install @yasirdora/linkotp better-auth
 ```
 
 ```ts
 import { betterAuth } from "better-auth";
-import { otplink } from \"@yasirdora/otplink/better-auth\";
+import { linkotp } from \"@yasirdora/linkotp/better-auth\";
 
 export const auth = betterAuth({
   database: db,
   plugins: [
-    otplink({
-      secret: process.env.OTPLINK_SECRET!,   // 32+ chars, from the environment
+    linkotp({
+      secret: process.env.LINKOTP_SECRET!,   // 32+ chars, from the environment
       baseUrl: "https://example.com",
       mailer: async (message) => { await send(message); },
     }),
@@ -290,31 +290,31 @@ On the client:
 
 ```ts
 import { createAuthClient } from "better-auth/client";
-import { otplinkClient } from \"@yasirdora/otplink/better-auth/client\";
+import { linkotpClient } from \"@yasirdora/linkotp/better-auth/client\";
 
-export const authClient = createAuthClient({ plugins: [otplinkClient()] });
+export const authClient = createAuthClient({ plugins: [linkotpClient()] });
 
-await authClient.signIn.otplink({ email });            // sends the email
-await authClient.signIn.otplink.code({ email, code }); // redeems the typed code
+await authClient.signIn.linkotp({ email });            // sends the email
+await authClient.signIn.linkotp.code({ email, code }); // redeems the typed code
 ```
 
 The link arm needs no client call — the user clicks it and lands back on your app with a session. Method names, argument types, and return types are all inferred from the server plugin, so there is nothing to keep in sync.
 
 | Endpoint | Method | What it does |
 |---|---|---|
-| `/sign-in/otplink` | `POST` | Issues one challenge and mails the code and the link |
-| `/sign-in/otplink/code` | `POST` | Redeems the typed code |
-| `/otplink/verify` | `GET` | Renders the confirmation page. **Consumes nothing.** |
-| `/otplink/verify` | `POST` | Redeems the link token |
+| `/sign-in/linkotp` | `POST` | Issues one challenge and mails the code and the link |
+| `/sign-in/linkotp/code` | `POST` | Redeems the typed code |
+| `/linkotp/verify` | `GET` | Renders the confirmation page. **Consumes nothing.** |
+| `/linkotp/verify` | `POST` | Redeems the link token |
 
 The `GET`/`POST` split is the point. Better Auth's built-in `magicLink` redeems on `GET`, which is why [discussion #6985](https://github.com/better-auth/better-auth/discussions/6985) is open: Defender Safe Links, Proofpoint, Mimecast, and Barracuda fetch every URL in inbound mail, so the scanner spends the credential and the user is told their brand-new link expired. The usual workaround — raising `allowedAttempts` — turns a single-use credential into a multi-use one, which is a downgrade dressed as a fix. Here the scanner gets HTML and the token survives; and because the same email carries a code on a *separate* secret, a user whose link is mangled entirely still has a way in.
 
-Sessions stay Better Auth's. otplink verifies control of an address and hands off to `internalAdapter` and `setSessionCookie`.
+Sessions stay Better Auth's. linkotp verifies control of an address and hands off to `internalAdapter` and `setSessionCookie`.
 
 A link that has expired, been redeemed, or been retired by too many wrong guesses is the ordinary end of a challenge's life, and the person clicking it is in a browser. Those all redirect to `errorCallbackURL` with `?error=<code>` rather than rendering a JSON error body:
 
 ```ts
-otplink({
+linkotp({
   // ...
   defaultCallbackURL: "/dashboard",
   errorCallbackURL: "/sign-in",   // receives ?error=invalid_token
@@ -324,7 +324,7 @@ otplink({
 Expired rows are inert — the `consume` guard enforces expiry regardless — but they do accumulate. Better Auth has no scheduler, so call `sweep()` from your own cron if table size matters:
 
 ```ts
-import { createBetterAuthStore } from \"@yasirdora/otplink/better-auth\";
+import { createBetterAuthStore } from \"@yasirdora/linkotp/better-auth\";
 
 const { adapter } = await auth.$context;      // note: $context is a promise
 await createBetterAuthStore({ adapter }).deleteExpired(Date.now());
@@ -338,7 +338,7 @@ The bundled conformance suite runs against it twice: once on the memory adapter,
 
 Requires `better-auth@>=1.7.0`, and this entry point is ESM-only, because Better Auth is.
 
-**Not yet supported here:** device binding (`binding.enabled`), which needs a cookie this entry point does not yet set — the plugin refuses to start rather than ignore it, so nobody deploys believing they have it. `otplink/http` implements it. The plugin also covers sign-in only; email verification and password reset are `purpose`s the core supports but the plugin does not expose.
+**Not yet supported here:** device binding (`binding.enabled`), which needs a cookie this entry point does not yet set — the plugin refuses to start rather than ignore it, so nobody deploys believing they have it. `linkotp/http` implements it. The plugin also covers sign-in only; email verification and password reset are `purpose`s the core supports but the plugin does not expose.
 
 ---
 
@@ -367,7 +367,7 @@ See [SECURITY.md](./SECURITY.md) for the full threat model and the residual risk
 ## Configuration
 
 ```ts
-createOtpLink({
+createLinkOtp({
   secret,                       // required, 32+ chars
   baseUrl,                      // required, https outside localhost
   store, mailer,                // required
@@ -407,15 +407,15 @@ shouldSend: async (email) => Boolean(await db.findUser(email)),
 
 ## Errors
 
-Every failure throws an `OtpLinkError` with a stable `code`, a suggested `status`, and a `publicMessage` that is safe to show a user.
+Every failure throws an `LinkOtpError` with a stable `code`, a suggested `status`, and a `publicMessage` that is safe to show a user.
 
 ```ts
-import { OtpLinkError } from "@yasirdora/otplink";
+import { LinkOtpError } from "@yasirdora/linkotp";
 
 try {
   await auth.verifyCode({ email, code });
 } catch (error) {
-  if (OtpLinkError.is(error)) {
+  if (LinkOtpError.is(error)) {
     error.code;               // "invalid_code" | "too_many_attempts" | …
     error.publicMessage;      // safe to render
     error.remainingAttempts;  // on invalid_code

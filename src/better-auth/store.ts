@@ -3,7 +3,7 @@
  *
  * Better Auth already owns a database connection, a schema, and a migration
  * story for whichever driver the application chose — Drizzle, Prisma, Kysely,
- * D1, Mongo. Asking users to configure a second connection for otplink would
+ * D1, Mongo. Asking users to configure a second connection for linkotp would
  * be both redundant and a source of drift, so this store speaks the adapter
  * interface instead and inherits all of it.
  *
@@ -51,7 +51,7 @@ export interface AdapterWhere {
 }
 
 /**
- * The six adapter methods otplink needs.
+ * The six adapter methods linkotp needs.
  *
  * Better Auth's `DBAdapter` is much wider than this; narrowing it here
  * documents the actual coupling and keeps the store usable with any object
@@ -92,13 +92,13 @@ export interface BetterAuthStoreOptions {
     /**
      * Model name to read and write. Must match the key in the plugin schema.
      *
-     * @default "otplinkChallenge"
+     * @default "linkotpChallenge"
      */
     readonly model?: string;
 }
 
 /** Default model name, shared with the plugin's schema declaration. */
-export const DEFAULT_MODEL = "otplinkChallenge";
+export const DEFAULT_MODEL = "linkotpChallenge";
 
 /**
  * Slack added to the provable retry bound, to absorb reads that lose for a
@@ -127,7 +127,7 @@ interface Row extends Record<string, unknown> {
  *
  * Adapters are not consistent about what a `date` field round-trips as: a
  * `Date` from Drizzle and Kysely, an ISO string from some driver
- * configurations, a number from others. otplink's surface is epoch
+ * configurations, a number from others. linkotp's surface is epoch
  * milliseconds throughout, so every read normalizes here rather than leaving
  * each call site to guess.
  */
@@ -213,7 +213,7 @@ function readDriverCount(result: unknown): number | undefined {
 export function affectedRows(result: unknown): number {
     if (typeof result === "number") {
         if (!Number.isFinite(result)) {
-            throw new Error(`otplink: adapter returned a non-finite affected-row count`);
+            throw new Error(`linkotp: adapter returned a non-finite affected-row count`);
         }
         return result;
     }
@@ -234,13 +234,13 @@ export function affectedRows(result: unknown): number {
         }
 
         // An adapter that hands back the row it updated. Recognized by the
-        // column only otplink writes, so an unrelated result object cannot be
+        // column only linkotp writes, so an unrelated result object cannot be
         // mistaken for a successful claim.
         if (typeof (result as Record<string, unknown>)["challengeId"] === "string") return 1;
     }
 
     throw new Error(
-        "otplink: could not read an affected-row count from the Better Auth adapter's " +
+        "linkotp: could not read an affected-row count from the Better Auth adapter's " +
             `updateMany result (received ${typeof result}). This is an adapter ` +
             "compatibility problem, not a failed sign-in; please report it.",
     );
@@ -378,7 +378,7 @@ export function createBetterAuthStore(options: BetterAuthStoreOptions): TokenSto
         async insert(challenge: Challenge): Promise<void> {
             // `challengeId` rather than the adapter's own `id`: Better Auth
             // generates primary keys itself, and several adapters require
-            // that (Mongo's ObjectId, for one). Carrying otplink's id in its
+            // that (Mongo's ObjectId, for one). Carrying linkotp's id in its
             // own unique column keeps both identifiers valid and avoids
             // depending on `forceAllowId`.
             await adapter.create<Row>({

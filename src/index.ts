@@ -1,5 +1,5 @@
 /**
- * otplink — one email, two ways in.
+ * linkotp — one email, two ways in.
  *
  * A passwordless auth primitive that issues a typed code and a scanner-safe
  * magic link as a single challenge, delivered in one message. Zero runtime
@@ -9,9 +9,9 @@
  * @packageDocumentation
  */
 
-export { createOtpLink } from "./core.ts";
+export { createLinkOtp } from "./core.ts";
 export type {
-    OtpLink,
+    LinkOtp,
     PublicConfig,
     StartInput,
     VerifyCodeInput,
@@ -29,14 +29,14 @@ export {
 export type {
     BindingOptions,
     EmailOptions,
-    OtpLinkOptions,
+    LinkOtpOptions,
     RenderContext,
     SecretRotation,
     SecretShape,
 } from "./config.ts";
 
-export { OtpLinkError } from "./errors.ts";
-export type { OtpLinkErrorCode, OtpLinkErrorOptions } from "./errors.ts";
+export { LinkOtpError } from "./errors.ts";
+export type { LinkOtpErrorCode, LinkOtpErrorOptions } from "./errors.ts";
 
 export { renderDefaultTemplate, RECOMMENDED_HEADERS } from "./email.ts";
 

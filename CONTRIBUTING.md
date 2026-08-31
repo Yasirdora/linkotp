@@ -20,7 +20,7 @@ SQLite through `node:sqlite`.
 
 ## The dependency rule
 
-**otplink has zero runtime dependencies and will keep it that way.** A pull
+**linkotp has zero runtime dependencies and will keep it that way.** A pull
 request that adds one to `dependencies` or `peerDependencies` will not be
 merged. This is not minimalism for its own sake: an auth library sits on the
 critical path of every sign-in, and every transitive dependency is a package

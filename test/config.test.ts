@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createOtpLink } from "../src/core.ts";
+import { createLinkOtp } from "../src/core.ts";
 import { normalizeCode, normalizeEmail, DEFAULT_CODE_ALPHABET } from "../src/config.ts";
 import { createMemoryStore } from "../src/stores/memory.ts";
 import { SECRET, BASE_URL } from "./helpers.ts";
@@ -14,7 +14,7 @@ const base = () => ({
 });
 
 function rejects(overrides: Record<string, unknown>, pattern: RegExp): void {
-    assert.throws(() => createOtpLink({ ...base(), ...overrides } as never), pattern);
+    assert.throws(() => createLinkOtp({ ...base(), ...overrides } as never), pattern);
 }
 
 test("a weak or missing secret is rejected at construction", () => {
@@ -26,8 +26,8 @@ test("a weak or missing secret is rejected at construction", () => {
 test("a non-https baseUrl is rejected outside local development", () => {
     rejects({ baseUrl: "http://example.com" }, /must be https/);
     rejects({ baseUrl: "not-a-url" }, /not a valid absolute URL/);
-    assert.doesNotThrow(() => createOtpLink({ ...base(), baseUrl: "http://localhost:3000" }));
-    assert.doesNotThrow(() => createOtpLink({ ...base(), baseUrl: "http://127.0.0.1:8787" }));
+    assert.doesNotThrow(() => createLinkOtp({ ...base(), baseUrl: "http://localhost:3000" }));
+    assert.doesNotThrow(() => createLinkOtp({ ...base(), baseUrl: "http://127.0.0.1:8787" }));
 });
 
 test("a token below 128 bits of entropy is rejected", () => {
@@ -35,7 +35,7 @@ test("a token below 128 bits of entropy is rejected", () => {
     // for a bearer credential that travels in a URL.
     rejects({ token: { length: 10 } }, /below the 128-bit minimum/);
     rejects({ token: { length: 4, alphabet: "0123456789" } }, /below the 128-bit minimum/);
-    assert.doesNotThrow(() => createOtpLink({ ...base(), token: { length: 22 } }));
+    assert.doesNotThrow(() => createLinkOtp({ ...base(), token: { length: 22 } }));
 });
 
 test("a code below 20 bits of entropy is rejected", () => {
@@ -55,7 +55,7 @@ test("out-of-range lifetimes and attempt budgets are rejected", () => {
 });
 
 test("the resolved config never retains the plaintext secret", () => {
-    const auth = createOtpLink(base());
+    const auth = createLinkOtp(base());
     assert.ok(
         !JSON.stringify(auth.config).includes(SECRET),
         "the secret leaked through config serialization",

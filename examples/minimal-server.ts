@@ -17,7 +17,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
-import { createOtpLink } from "../src/index.ts";
+import { createLinkOtp } from "../src/index.ts";
 import { createHandler } from "../src/http/index.ts";
 import { createMemoryStore } from "../src/stores/index.ts";
 
@@ -26,7 +26,7 @@ const ORIGIN = `http://localhost:${PORT}`;
 
 // ---------------------------------------------------------------- auth setup
 
-const auth = createOtpLink({
+const auth = createLinkOtp({
     secret: "example-only-secret-at-least-32-characters-long",
     baseUrl: ORIGIN,
     store: createMemoryStore(),
@@ -42,7 +42,7 @@ const auth = createOtpLink({
 });
 
 // A real deployment issues a signed session cookie here. This one is a stub,
-// to keep the example about otplink rather than about session management.
+// to keep the example about linkotp rather than about session management.
 const handler = createHandler(auth, {
     product: "Example",
     async onVerified(identity) {
@@ -60,7 +60,7 @@ const handler = createHandler(auth, {
 
 const PAGE = `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>otplink example</title>
+<title>linkotp example</title>
 <style>
   :root { color-scheme: light dark; }
   body { font: 15px/1.6 system-ui, sans-serif; max-width: 22rem; margin: 15vh auto; padding: 0 1rem; }
@@ -163,5 +163,5 @@ createServer(async (req, res) => {
         res.writeHead(500).end("Internal error");
     }
 }).listen(PORT, () => {
-    console.log(`\notplink example running at ${ORIGIN}\n`);
+    console.log(`\nlinkotp example running at ${ORIGIN}\n`);
 });

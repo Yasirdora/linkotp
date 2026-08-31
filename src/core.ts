@@ -16,12 +16,12 @@ import {
     normalizeCode,
     normalizeEmail,
     resolveOptions,
-    type OtpLinkOptions,
+    type LinkOtpOptions,
     type ResolvedConfig,
 } from "./config.ts";
 import { randomId, randomString, timingSafeEqual, type Hasher } from "./crypto.ts";
 import { renderDefaultTemplate, RECOMMENDED_HEADERS } from "./email.ts";
-import { OtpLinkError } from "./errors.ts";
+import { LinkOtpError } from "./errors.ts";
 import type { Challenge, ConsumeQuery, Purpose, StartResult, VerifiedIdentity } from "./types.ts";
 
 export interface StartInput {
@@ -66,7 +66,7 @@ export interface PublicConfig {
     readonly bindingEnabled: boolean;
 }
 
-export interface OtpLink {
+export interface LinkOtp {
     /** Issues a challenge and delivers it. */
     start(input: StartInput): Promise<StartResult>;
     /** Redeems the typed code. */
@@ -81,7 +81,7 @@ export interface OtpLink {
 const sleep = (ms: number): Promise<void> =>
     ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createOtpLink(options: OtpLinkOptions): OtpLink {
+export function createLinkOtp(options: LinkOtpOptions): LinkOtp {
     const config = resolveOptions(options);
 
     // Current hasher first, then any rotated-out secrets. Writes always use
@@ -100,9 +100,9 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
 
     async function enforceRateLimit(scope: string, key: string | undefined): Promise<void> {
         if (!config.rateLimiter || key === undefined) return;
-        const verdict = await config.rateLimiter.check(`otplink:${scope}:${key}`, config.clock());
+        const verdict = await config.rateLimiter.check(`linkotp:${scope}:${key}`, config.clock());
         if (!verdict.allowed) {
-            throw new OtpLinkError(
+            throw new LinkOtpError(
                 "rate_limited",
                 `rate limit exceeded for ${scope}`,
                 verdict.retryAfter !== undefined ? { retryAfter: verdict.retryAfter } : {},
@@ -147,14 +147,14 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
         if (!config.bindingEnabled || challenge.bindingHash === null) return;
 
         if (presented === undefined || presented.length === 0) {
-            throw new OtpLinkError(
+            throw new LinkOtpError(
                 "binding_mismatch",
                 "challenge is bound but no binding was presented",
             );
         }
         const presentedHash = await hash("binding", presented);
         if (!timingSafeEqual(presentedHash, challenge.bindingHash)) {
-            throw new OtpLinkError("binding_mismatch", "binding does not match the issuing device");
+            throw new LinkOtpError("binding_mismatch", "binding does not match the issuing device");
         }
     }
 
@@ -177,7 +177,7 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
 
             const email = normalizeEmail(input.email);
             if (email === null) {
-                throw new OtpLinkError("invalid_email", "email failed validation");
+                throw new LinkOtpError("invalid_email", "email failed validation");
             }
 
             const purpose: Purpose = input.purpose ?? "sign-in";
@@ -193,7 +193,7 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
                 since: now - config.maxSendsPerAddress.windowMs,
             });
             if (issued >= config.maxSendsPerAddress.count) {
-                throw new OtpLinkError("rate_limited", "per-address send cap reached", {
+                throw new LinkOtpError("rate_limited", "per-address send cap reached", {
                     retryAfter: Math.ceil(config.maxSendsPerAddress.windowMs / 1000),
                 });
             }
@@ -266,7 +266,7 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
                 // the caller's send quota or leave a live secret nobody has.
                 // Best effort: the delivery failure is the error worth raising.
                 await config.store.delete(challenge.id).catch(() => undefined);
-                throw new OtpLinkError("delivery_failed", "mailer threw", { cause: error });
+                throw new LinkOtpError("delivery_failed", "mailer threw", { cause: error });
             }
 
             return Object.freeze({
@@ -288,7 +288,7 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
     async function verifyCode(input: VerifyCodeInput): Promise<VerifiedIdentity> {
         const email = normalizeEmail(input.email);
         if (email === null) {
-            throw new OtpLinkError("invalid_email", "email failed validation");
+            throw new LinkOtpError("invalid_email", "email failed validation");
         }
 
         const purpose: Purpose = input.purpose ?? "sign-in";
@@ -321,11 +321,11 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
             // code" once the budget is spent sends them round a loop they can
             // never complete.
             if (outcome.found && outcome.remaining <= 0) {
-                throw new OtpLinkError("too_many_attempts", "attempt ceiling reached", {
+                throw new LinkOtpError("too_many_attempts", "attempt ceiling reached", {
                     remainingAttempts: 0,
                 });
             }
-            throw new OtpLinkError("invalid_code", "no live challenge matched", {
+            throw new LinkOtpError("invalid_code", "no live challenge matched", {
                 ...(outcome.found ? { remainingAttempts: outcome.remaining } : {}),
             });
         }
@@ -352,7 +352,7 @@ export function createOtpLink(options: OtpLinkOptions): OtpLink {
             // Expired, already used, and never existed are one error on
             // purpose. Distinguishing them would tell an attacker holding a
             // captured token whether it was ever valid.
-            throw new OtpLinkError("invalid_token", "no live challenge matched");
+            throw new LinkOtpError("invalid_token", "no live challenge matched");
         }
 
         await assertBinding(claimed.challenge, claimed.hash, input.binding);

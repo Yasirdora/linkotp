@@ -1,7 +1,7 @@
 /** Shared fixtures. Not a test file, so the runner's glob skips it. */
 
-import { createOtpLink, type OtpLink } from "../src/core.ts";
-import type { OtpLinkOptions } from "../src/config.ts";
+import { createLinkOtp, type LinkOtp } from "../src/core.ts";
+import type { LinkOtpOptions } from "../src/config.ts";
 import { createMemoryStore, type MemoryStore } from "../src/stores/memory.ts";
 import type { MailerMessage } from "../src/types.ts";
 
@@ -10,7 +10,7 @@ export const BASE_URL = "https://example.com";
 export const NOW = 1_700_000_000_000;
 
 export interface Harness {
-    auth: OtpLink;
+    auth: LinkOtp;
     store: MemoryStore;
     sent: MailerMessage[];
     /** Advances the fake clock. */
@@ -21,12 +21,12 @@ export interface Harness {
     lastToken(): string;
 }
 
-export function harness(overrides: Partial<OtpLinkOptions> = {}): Harness {
+export function harness(overrides: Partial<LinkOtpOptions> = {}): Harness {
     const store = createMemoryStore();
     const sent: MailerMessage[] = [];
     let now = NOW;
 
-    const auth = createOtpLink({
+    const auth = createLinkOtp({
         secret: SECRET,
         baseUrl: BASE_URL,
         store,
@@ -64,7 +64,7 @@ export function harness(overrides: Partial<OtpLinkOptions> = {}): Harness {
     };
 }
 
-/** Asserts that `fn` throws an OtpLinkError carrying `code`. */
+/** Asserts that `fn` throws an LinkOtpError carrying `code`. */
 export async function expectError(fn: () => Promise<unknown>, code: string): Promise<void> {
     try {
         await fn();

@@ -149,5 +149,5 @@ export function renderDefaultTemplate(context: RenderContext): { html: string; t
 export const RECOMMENDED_HEADERS: Readonly<Record<string, string>> = Object.freeze({
     "Auto-Submitted": "auto-generated",
     "X-Auto-Response-Suppress": "All",
-    "X-Entity-Ref-ID": "otplink",
+    "X-Entity-Ref-ID": "linkotp",
 });

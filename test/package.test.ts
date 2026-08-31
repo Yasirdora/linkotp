@@ -34,8 +34,8 @@ test("the ESM build exposes the documented surface", { skip: !built && "run `npm
     const mod = await import(dist("dist/index.js"));
 
     for (const name of [
-        "createOtpLink",
-        "OtpLinkError",
+        "createLinkOtp",
+        "LinkOtpError",
         "normalizeEmail",
         "normalizeCode",
         "randomString",
@@ -67,16 +67,16 @@ test("the subpath entries resolve", { skip: !built && "run `npm run build` first
     // This one also proves the optional peer resolves at runtime: the module
     // imports `better-auth/api` and `better-auth/cookies` at load time.
     const betterAuth = await import(dist("dist/better-auth/index.js"));
-    assert.equal(typeof betterAuth.otplink, "function");
+    assert.equal(typeof betterAuth.linkotp, "function");
     assert.equal(typeof betterAuth.createBetterAuthStore, "function");
-    assert.equal(typeof betterAuth.otplinkSchema, "function");
+    assert.equal(typeof betterAuth.linkotpSchema, "function");
 
     // The client half must load with *no* better-auth import of its own: it
     // ships to the browser, and pulling the server plugin in would drag
-    // `better-auth/api` and otplink's protocol core along with it.
+    // `better-auth/api` and linkotp's protocol core along with it.
     const client = await import(dist("dist/better-auth/client.js"));
-    assert.equal(typeof client.otplinkClient, "function");
-    assert.equal(client.otplinkClient().id, "otplink");
+    assert.equal(typeof client.linkotpClient, "function");
+    assert.equal(client.linkotpClient().id, "linkotp");
 });
 
 test("the Better Auth entry is ESM-only, deliberately", () => {
@@ -97,18 +97,18 @@ test("the Better Auth entry is ESM-only, deliberately", () => {
 
 test("the CommonJS build loads under require()", { skip: !built && "run `npm run build` first" }, () => {
     const mod = requireCjs(resolve(root, "dist/cjs/index.js")) as Record<string, unknown>;
-    assert.equal(typeof mod.createOtpLink, "function");
+    assert.equal(typeof mod.createLinkOtp, "function");
 
     const stores = requireCjs(resolve(root, "dist/cjs/stores/index.js")) as Record<string, unknown>;
     assert.equal(typeof stores.createMemoryStore, "function");
 });
 
 test("the ESM build actually runs end to end", { skip: !built && "run `npm run build` first" }, async () => {
-    const { createOtpLink } = await import(dist("dist/index.js"));
+    const { createLinkOtp } = await import(dist("dist/index.js"));
     const { createMemoryStore } = await import(dist("dist/stores/index.js"));
 
     const sent: Array<{ text: string }> = [];
-    const auth = createOtpLink({
+    const auth = createLinkOtp({
         secret: "packaging-test-secret-at-least-32-characters",
         baseUrl: "https://example.com",
         store: createMemoryStore(),
@@ -150,7 +150,7 @@ test("the published package declares no runtime dependencies", () => {
     // Asserted as present-and-empty, not merely absent: `npm install` strips
     // an empty `dependencies` object, and the field is a deliberate statement
     // that the emptiness is intended rather than incidental.
-    assert.deepEqual(pkg.dependencies, {}, "otplink must stay dependency-free");
+    assert.deepEqual(pkg.dependencies, {}, "linkotp must stay dependency-free");
 
     // Every peer must be optional. An optional peer installs nothing for a
     // user who never imports the entry point that needs it, so the
