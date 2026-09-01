@@ -443,4 +443,4 @@ No bundler, no test framework, no `@types/node`. The SQL suite runs against real
 
 ## License
 
-MIT
+[MIT](https://github.com/Yasirdora/linkotp/blob/main/LICENSE) © 2026 [Yasir Dora.](https://ysr.design/)
