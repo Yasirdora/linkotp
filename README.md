@@ -1,7 +1,7 @@
 # linkotp
 
-[![CI](https://github.com/Yasirdora/linkotp/actions/workflows/release.yml/badge.svg)](https://github.com/Yasirdora/linkotp/actions/workflows/release.yml)
-[![npm version](https://img.shields.io/npm/v/@yasirdora/linkotp.svg?style=flat)](https://www.npmjs.com/package/@yasirdora/linkotp)
+[![CI](https://github.com/Yasirdora/linkotp/actions/workflows/ci.yml/badge.svg)](https://github.com/Yasirdora/linkotp/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/linkotp.svg?style=flat)](https://www.npmjs.com/package/linkotp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 
