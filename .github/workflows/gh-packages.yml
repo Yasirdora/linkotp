@@ -23,7 +23,7 @@ jobs:
         run: npm run build
       - name: Rename package for GitHub Packages
         run: |
-          npm pkg set name="@Yasirdora/linkotp"
+          sed -i 's/"name": "linkotp"/"name": "@Yasirdora\/linkotp"/' package.json
       - name: Publish to GitHub Packages
         run: npm publish --provenance=false
         env:
