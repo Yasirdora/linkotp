@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 
-**One email, two ways in.** A passwordless auth primitive that issues a typed code *and* a scanner-safe magic link as a single challenge, delivered in one message.
+**One email, two ways in.** A dependency-free, framework-agnostic passwordless auth primitive that sends a typed code and a scanner-safe magic link in a single message.
 
 - **Zero runtime dependencies.** Web Standard APIs only. (`linkotp/better-auth` declares Better Auth as an *optional* peer, so it installs nothing unless you import it.)
 - **Runs anywhere.** Node, Bun, Deno, Cloudflare Workers, Vercel Edge.
