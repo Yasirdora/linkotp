@@ -1,7 +1,7 @@
 {
   "name": "linkotp",
   "version": "1.0.0",
-  "description": "One email, two ways in. A dependency-free, framework-agnostic passwordless auth primitive that sends a typed code and a scanner-safe magic link in a single message.",
+  "description": "A zero-dependency passwordless auth primitive delivering a typed code and scanner-safe magic link in one email.",
   "keywords": [
     "auth",
     "authentication",
